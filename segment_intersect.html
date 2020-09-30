@@ -1,0 +1,60 @@
+<body style=margin:0>
+<canvas id=a>
+<script>
+c=a.getContext`2d`,x=y=0
+wedge=(p1,p2)=>p1[0]*p2[1]-p1[1]*p2[0];
+intersect=(p1,p2,p3,p4,l)=>{
+    r=[p3[0]-p1[0],p3[1]-p1[1]]
+    s=[p2[0]-p1[0],p2[1]-p1[1]]
+    t=[p4[0]-p3[0],p4[1]-p3[1]]
+    wst=wedge(s,t)
+    if (Math.abs(wst) < Number.EPSILON) return
+    u=wedge(r,t)/wst
+    if (u<=0||u>=1) return
+    v=wedge(r,s)/wst
+    if (v>0&&v<1) return [p1[0]+u*s[0],p1[1]+u*s[1]]
+}
+p=[]
+f=t=>{
+    a.width=innerWidth;a.height=innerHeight;
+    c.fillRect(0,0,innerWidth,innerHeight);
+    // Existing lines
+    c.strokeStyle='white'
+    c.beginPath();
+    for (i=0;i<p.length;i+=2) {
+        c.moveTo(p[i][0],p[i][1])
+        p[i+1] && c.lineTo(p[i+1][0],p[i+1][1])
+    }
+    c.stroke();
+    // Existing lines intersections
+    c.strokeStyle='red';
+    for (i=0;i<p.length;i+=2) {
+        for (j=0;j<p.length;j+=2) {
+            if (i == j || !(p[i+1]) || !(p[j+1])) continue;
+            result=intersect(p[i],p[i+1],p[j],p[j+1]);
+            result && c.strokeRect(result[0]-5, result[1]-5, 10, 10);
+        }
+    }
+    // Current line and intersection
+    if (p.length%2) {
+        c.strokeStyle='yellow'
+        c.beginPath();
+        c.moveTo(p[p.length-1][0], p[p.length- 1][1]);
+        c.lineTo(x, y);
+        c.stroke();
+        c.strokeStyle='green';
+        for (i=0;i<p.length-1;i+=2) {
+            result=intersect(p[i],p[i+1],p[p.length-1],[x,y]);
+            result && c.strokeRect(result[0]-5, result[1]-5, 10, 10);
+        }
+    }
+    requestAnimationFrame(f);
+}
+onclick=e=>{
+    p.push([e.pageX,e.pageY]);
+}
+onmousemove=e=>{
+    x=e.pageX;y=e.pageY;
+}
+requestAnimationFrame(f);
+</script>
