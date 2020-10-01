@@ -1,0 +1,173 @@
+<body style="margin:0">
+    <canvas id="canvas"></canvas>
+    <script>
+        // TODO Check this https://games.greggman.com/game/programming_m_c__kids/ for better old-school collision detection
+        ctx = canvas.getContext("2d");
+        const Renderer = {
+            tile: (x, y) => {
+                ctx.fillStyle = Game.colors.blue;
+                ctx.fillRect(x, y, Game.tileSize, Game.tileSize);
+            },
+            player: (x, y) => {
+                ctx.fillStyle = Game.colors.green;
+                ctx.beginPath();
+                ctx.arc(x + Game.tileSize * 0.5, y + Game.tileSize * 0.5, Game.tileSize * 0.49, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        const Game = {
+            tileSize: 16,
+            scale: 3,
+            colors: {
+                dark: '#474954',
+                red: '#ED6A5A',
+                green: '#ABE188',
+                blue: '#7284A8',
+                yellow: '#E9BE6D',
+                bright: '#EAE6D7'
+            },
+            gravity: 0.1,
+            keys: {
+                up: false,
+                left: false,
+                right: false,
+            },
+            last: null,
+            gdt: 0,
+            step: 1/60, // frame duration in seconds
+            init: function() {
+                this.world = World(
+                '1111111111111111' +
+                '0000000000000000' +
+                '0000000000000000' +
+                '1111111100000000' +
+                '1100000000001111' +
+                '0000000000111111' +
+                '0000000000000000' +
+                '0000001100000001' +
+                '0011001100000011' +
+                '1111111111111111');
+            },
+            run: function() {
+                requestAnimationFrame(this.frame.bind(this));
+            },
+            update: function () {
+                var currentX = Player.pos[0]
+                if (this.keys.up && Player.isGrounded)
+                    Player.vel[1] = -Player.jumpVel;
+
+                Player.vel[0] = 0;
+                if (this.keys.left && Player.pos[0] > 0)
+                    Player.vel[0] = -1;
+                else if (this.keys.right && Player.pos[0] <= (this.world.width - 1) * this.tileSize)
+                    Player.vel[0] = 1;
+
+                Player.pos[0] += Player.vel[0];
+
+                var xOffset = 0;
+                if (Player.vel[0] > 0) xOffset = this.tileSize - 1;
+
+                // Found a tile, reset player position
+                if (this.world.getTile(
+                    Math.floor((Player.pos[0]+xOffset) / this.tileSize) * this.tileSize,
+                    Math.floor((Player.pos[1]+this.tileSize-1) / this.tileSize) * this.tileSize))
+                    Player.pos[0] = currentX;
+
+                Player.pos[1] += Player.vel[1] += this.gravity;
+                Player.isGrounded = false;
+                if (Player.vel[1] >= 0 && this.world.getTile(
+                    Math.floor((Player.pos[0]+this.tileSize / 2) / this.tileSize) * this.tileSize,
+                    Math.floor((Player.pos[1]+this.tileSize) / this.tileSize) * this.tileSize)) {
+                    Player.pos[1] = Math.floor(Player.pos[1] / this.tileSize) * this.tileSize;
+                    Player.vel[1] = 0;
+                    Player.isGrounded = true;
+                }
+                if (Player.vel[1] <= 0 && this.world.getTile(
+                    Math.floor((Player.pos[0]+this.tileSize / 2) / this.tileSize) * this.tileSize,
+                    Math.floor((Player.pos[1]) / this.tileSize) * this.tileSize)) {
+                    Player.pos[1] = Math.ceil(Player.pos[1] / this.tileSize) * this.tileSize;
+                    Player.vel[1] = 0;
+                }
+            },
+            frame: function (t) {
+                var now = t;
+                var last = this.last || (t - this.step * 1000);
+                var dt = Math.min(1, (now - last) / 1000)
+                this.gdt += dt;
+                while (this.gdt >= this.step) {
+                    this.gdt -= this.step;
+                    this.update();
+                }
+                this.render();
+                this.last = now;
+                requestAnimationFrame(this.frame.bind(this));
+            },
+            render: function() {
+                canvas.width = this.tileSize * this.scale * this.world.width;
+                canvas.height = this.tileSize * this.scale * this.world.height;
+                ctx.scale(this.scale, this.scale);
+                ctx.fillStyle = this.colors.dark;
+                ctx.fillRect(0, 0, this.tileSize * this.world.width, this.tileSize * this.world.width);
+                this.world.render();
+                Player.render();
+            }
+        }
+        const Player = {
+            pos: [0, 2 * Game.tileSize],
+            vel: [0, 0],
+            isGrounded: false,
+            jumpVel: 2.8,
+            render: function() {
+                Renderer.player(this.pos[0], this.pos[1]);
+            }
+        }
+        const TileObject = {
+            type: '0',
+            pos: [0, 0],
+            create: function(type, x, y) {
+                var self = Object.create(this);
+                self.type = type;
+                self.pos = [x,y];
+                return self;
+            },
+            render: function () {
+                switch (this.type) {
+                    case '1': Renderer.tile(this.pos[0], this.pos[1]);
+                }
+            }
+        }
+        const Tile = (type, x, y) => TileObject.create(type, x, y);
+        const WorldObject = {
+            tiles: [],
+            width: 16,
+            height: 10,
+            create: function(map) {
+                var self = Object.create(this);
+                self.tiles = [];
+                map.split("").forEach((v, i) => {
+                    x = i % self.width; y = Math.floor(i / self.width);
+                    if (v !== '0')
+                        self.tiles.push(Tile(v, x * Game.tileSize, y * Game.tileSize));
+                });
+                return self;
+            },
+            render: function () {
+                this.tiles.forEach(tile => tile.render())
+            },
+            getTile: function(x, y) {
+                var tile = this.tiles.find(tile=>tile.pos[0]===x && tile.pos[1]===y);
+                return tile;
+            },
+        }
+        const World = (map) => WorldObject.create(map);
+        onkeydown=e=>{
+            switch((e.which || e.keyCode)) {
+                case 37: Game.keys.left = true; break;
+                case 38: Game.keys.up = true; break;
+                case 39: Game.keys.right = true; break;
+            };
+        }
+        onkeyup=e=>Game.keys={up:false, left: false, right: false};
+        Game.init(); Game.run();
+    </script>
+</body>
