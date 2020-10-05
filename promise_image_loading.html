@@ -1,0 +1,42 @@
+<body style="margin:0">
+    <canvas id="canvas"></canvas>
+    <script>
+        ctx = canvas.getContext("2d");
+
+        images = {
+            background: {path: 'assets/promise_image_loading/background.png'},
+            hills: {path: 'assets/promise_image_loading/hills.png'},
+            tiles: {path: 'assets/promise_image_loading/tiles.png'}
+        };
+        promises = [];
+        Object.keys(images).forEach(key => {
+            images[key].image = new Image();
+            promises.push(new Promise((resolve, reject) => {
+                images[key].image.src = images[key].path;
+                images[key].image.onload = e => {
+                    updateProgress(images[key].path);
+                    resolve();
+                };
+                images[key].image.onerror = e => reject(e);
+            }));
+        });
+        Promise.all(promises).then(
+            results => requestAnimationFrame(frame),
+            failed => console.log(failed)
+        );
+        progress = 0;
+        updateProgress = (path) => {
+            progress++;
+            console.log(`${Math.round(progress * 33.3)}% loaded (${path})`);
+        }
+
+        frame = t => {
+            canvas.width = images.background.image.naturalWidth;
+            canvas.height = images.background.image.naturalHeight;
+            ctx.drawImage(images.background.image, 0, 0);
+            ctx.drawImage(images.tiles.image, 0, 0);
+            ctx.drawImage(images.hills.image, 0, 0);
+            requestAnimationFrame(frame);
+        };
+    </script>
+</body>
