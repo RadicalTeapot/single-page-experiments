@@ -1,0 +1,290 @@
+<body style="margin:0;background-color:0;">
+    <canvas id="canvas"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.5/dist/tweakpane.min.js"></script>
+    <script>
+        // TODO Set jump using max dist and height instead of velocity and
+        // gravity and log those in pane (see below)
+        /* --------------------------------------------------------------- */
+        // getGravityAndJumpVel = function(vx, xh, h, gm) {
+        //    var v0 = 2 * h * vx / xh;
+        //    var g = -2 * h * vx * vx / (xh * xh);
+        //    console.log('jump vel', v0, 'g', g);
+        //    x = Math.sqrt(-2*h/(g*gm));
+        //    console.log('final length', xh*0.5+x, 'duration', (x+xh)/vx);
+        // }
+        // setJump = function(vx, jumpLength, jumpHeight, gravityMult) {
+        //    xh = jumpLength * vx / (1/Math.sqrt(gravityMult) + 0.5*vx);
+        //    getGravityAndJumpVel(vx, xh, jumpHeight, gravityMult);
+        // }
+        // setJump(2, 2, 2, 3);
+        /* --------------------------------------------------------------- */
+
+        /** Asset loader */
+        const Loader = {
+            images: {
+                bg_background: {path: 'assets/better_jump/bg_background.png'},
+                bg_hills: {path: 'assets/better_jump/bg_hills.png'},
+                bg_tiles: {path: 'assets/better_jump/bg_tiles.png'},
+                player_fall: {path: 'assets/better_jump/player_fall.png'},
+                player_jump1: {path: 'assets/better_jump/player_jump1.png'},
+                player_jump2: {path: 'assets/better_jump/player_jump2.png'},
+                player_stand: {path: 'assets/better_jump/player_stand.png'},
+                player_walk1: {path: 'assets/better_jump/player_walk1.png'},
+                player_walk2: {path: 'assets/better_jump/player_walk2.png'},
+                player_walk3: {path: 'assets/better_jump/player_walk3.png'},
+                tile_full: {path: 'assets/better_jump/tile_full.png'},
+                tile_top: {path: 'assets/better_jump/tile_top.png'},
+            },
+            /** Log loading progress */
+            updateProgress: (index, total, message) => {
+                console.log(`Progress: ${Math.round(((index+1) / total)*100)}% (${message})`);
+            },
+            /** Load assets using Promises */
+            load: function() {
+                var promises = [];
+                Object.keys(this.images).forEach((key, index, keys) => {
+                    this.images[key].image = new Image();
+                    promises.push(new Promise((resolve, reject) => {
+                        this.images[key].image.src = this.images[key].path;
+                        this.images[key].image.onload = e => {
+                            this.updateProgress(index, keys.length, this.images[key].path);
+                            resolve();
+                        }
+                        this.images[key].onerror = e => reject(e);
+                    }));
+                });
+                return Promise.all(promises).then(result => result);
+            }
+        };
+
+        /** Tweakable parameters */
+        const Params = {
+            jumpVel: 7.5,
+            speed: 5,
+            gravity: 0.4,
+            gravityMult: 2.5,
+            fps: 0,
+        }
+
+        /** Tweakpane object to tweak parameters */
+        const PaneObject = {
+            create: function(params) {
+                var self = Object.create(this);
+                self.pane = new Tweakpane({title: "Settings"});
+                self.pane.addMonitor(Params, 'fps', {label: 'FPS'});
+                var folder = self.pane.addFolder({title: "Jump", expanded: true});
+                folder.addInput(Params, 'jumpVel');
+                folder.addInput(Params, 'speed');
+                folder.addInput(Params, 'gravity');
+                folder.addInput(Params, 'gravityMult');
+                folder = self.pane.addFolder({title: "Diagnostics", expanded: false});
+                folder.addMonitor(Game.keys, 'jump');
+                folder.addMonitor(Game.keys, 'left');
+                folder.addMonitor(Game.keys, 'right');
+                folder.addMonitor(Player.pos, '0', {label: 'Player x'});
+                folder.addMonitor(Player.pos, '1', {label: 'Player y'});
+                folder.addMonitor(Player.vel, '0', {label: 'Player vel x'});
+                folder.addMonitor(Player.vel, '1', {label: 'Player vel y'});
+                folder.addMonitor(Player, 'isGrounded');
+                return self;
+            }
+        }
+
+        /** Main object */
+        const Game = {
+            /** Duration of a frame */
+            step: 1 / 60,
+            /** Frame rate diff counter */
+            gdt: 0,
+            /** Control keys state */
+            keys: {jump: false, left: false, right: false},
+            /** Initialize the game */
+            init: function () {
+                // Create world
+                this.world = WorldObject.create(
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    '0000000000000000',
+                    'xxxxxxxxxxxxxxxx',
+                );
+
+                // Create pane to tweak params
+                this.pane = PaneObject.create();
+
+                // Connect keyboard events
+                onkeydown = e => {
+                    switch ((e.which || e.keyCode)) {
+                        case 37: this.keys.left = true; break;
+                        case 38: this.keys.jump = true; break;
+                        case 39: this.keys.right = true; break;
+                    }
+                }
+                onkeyup = e => {
+                    switch ((e.which || e.keyCode)) {
+                        case 37: this.keys.left = false; break;
+                        case 38: this.keys.jump = false; break;
+                        case 39: this.keys.right = false; break;
+                    }
+                }
+
+                this.frame = this.frame.bind(this);
+            },
+            /** Start the game */
+            run: function () {
+                Loader.load().then(
+                    success => requestAnimationFrame(this.frame),
+                    failure => console.log(failure)
+                );
+            },
+            /** Fixed step frame */
+            frame: function (t) {
+                var now = t;
+                var last = this.last || (t - this.step * 1000);
+                var dt = Math.min((now - last) / 1000, 1);
+                this.gdt += dt;
+                while (this.gdt >= dt) {
+                    // Update physics at fixed rate
+                    this.update();
+                    this.gdt -= dt;
+                }
+                // Render frame
+                Renderer.render();
+                Params.fps = Math.round(1 / dt);
+                this.last = now;
+                requestAnimationFrame(this.frame);
+            },
+            /** Update physics */
+            update: function () {
+                Player.update();
+            },
+        };
+
+        /** Render code */
+        const Renderer = {
+            /** 2D Context */
+            ctx: canvas.getContext("2d"),
+            /** Size of a tile in pixels*/
+            tileSize: 32,
+            /** Scaling factor for renderer objects */
+            scale: 2,
+            /** Render background */
+            background: function() {
+                var pattern = this.ctx.createPattern(Loader.images.bg_background.image, 'repeat');
+                this.ctx.fillStyle = pattern;
+                this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+                // Tiles
+                pattern = this.ctx.createPattern(Loader.images.bg_tiles.image, 'repeat-x');
+                this.ctx.fillStyle = pattern;
+                this.ctx.save();
+                this.ctx.translate(0, canvas.height - Loader.images.bg_tiles.image.height);
+                this.ctx.fillRect(0, 0, canvas.width, Loader.images.bg_tiles.image.height);
+                this.ctx.restore();
+                // Hills
+                pattern = this.ctx.createPattern(Loader.images.bg_hills.image, 'repeat-x');
+                this.ctx.fillStyle = pattern;
+                this.ctx.save();
+                this.ctx.translate(0, canvas.height - Loader.images.bg_hills.image.height);
+                this.ctx.fillRect(0, 0, canvas.width, Loader.images.bg_hills.image.height);
+                this.ctx.restore();
+            },
+            /** Render a frame */
+            render: function () {
+                // Reset canvas size
+                canvas.width = Game.world.width * this.tileSize * this.scale;
+                canvas.height = Game.world.height * this.tileSize * this.scale;
+                // Draw background
+                this.background();
+                // Scale objects
+                this.ctx.scale(this.scale, this.scale);
+                // Render tiles
+                Game.world.render(this.ctx);
+                // Render player
+                Player.render(this.ctx);
+            }
+        };
+
+        /** Game level*/
+        const WorldObject = {
+            /** Create level from string array */
+            create: function(...map) {
+                var self = Object.create(this);
+                self.height = map.length;
+                self.width = map[0].length;
+                self.map = map;
+                self.tiles = [];
+                map.forEach((row, y) => row.split("").forEach((cell, x) => cell === 'x' && self.tiles.push({x:x, y:y})));
+                return self;
+            },
+            /** Render level tiles */
+            render: function(ctx) {
+                // Dirty scale but works for now
+                this.tiles.forEach(tile => ctx.drawImage(Loader.images.tile_top.image, tile.x * Renderer.tileSize, tile.y * Renderer.tileSize, Renderer.tileSize, Renderer.tileSize));
+            }
+        };
+
+        /** Player character */
+        const Player = {
+            /** Position */
+            pos: [1 * Renderer.tileSize, 8 * Renderer.tileSize],
+            /** Velocity */
+            vel: [0, 0],
+            /** Whether player is on the ground */
+            isGrounded: true,
+            /** Counter for walk cycle sprites */
+            walkImageCounter: 0,
+            /** Update player position */
+            update: function() {
+                var currentX = this.pos[0];
+                // X movement
+                this.vel[0] = 0;
+                // Collide with screen borders
+                if (Game.keys.left && this.pos[0] > 0)
+                    this.pos[0] += this.vel[0] = -Params.speed;
+                else if (Game.keys.right && this.pos[0] <= (Game.world.width - 1) * Renderer.tileSize)
+                    this.pos[0] += this.vel[0] = Params.speed;
+                this.walkImageCounter+=0.25;
+                if (this.vel[0] === 0)
+                    this.walkImageCounter = 0;
+
+                // Y movement
+                if (Game.keys.jump && this.isGrounded)
+                    this.vel[1] = -Params.jumpVel;
+
+                let gravity = Params.gravity;
+                // Alter gravity if player is falling down or let go of jump button
+                if (this.vel[1] > 0 || !Game.keys.jump) gravity *= Params.gravityMult;
+                this.pos[1] += this.vel[1] += gravity;
+                this.isGrounded = false;
+                // Collide with ground
+                if (this.vel[1] >= 0 && this.pos[1] >= (Game.world.height - 2) * Renderer.tileSize) { // Going down
+                    this.pos[1] = (Game.world.height - 2) * Renderer.tileSize;
+                    this.vel[1] = 0;
+                    this.isGrounded = true;
+                }
+            },
+            /** Render player */
+            render: function(ctx) {
+                // Pick correct animation sprite
+                const image = this.walkImageCounter ? Loader.images[`player_walk${(this.walkImageCounter|0)%3+1}`].image : Loader.images.player_stand.image;
+                ctx.save();
+                // Flip X axis if player is moving left
+                let scaleX = this.vel[0] < 0 ? -1 : 1;
+                ctx.translate(this.vel[0] < 0 ? Renderer.tileSize : 0, 0);
+                ctx.scale(scaleX,1);
+                // Dirty scale but works for now
+                ctx.drawImage(image, scaleX * this.pos[0], this.pos[1], Renderer.tileSize * image.width / image.height, Renderer.tileSize);
+                ctx.restore();
+            }
+        };
+
+        // Start game
+        Game.init();
+        Game.run();
+    </script>
+</body>
