@@ -1,0 +1,20 @@
+<body style="margin:0">
+    <canvas id="c" width=1920 height=1080 style="width:100%;height:100%"></canvas>
+    <script>
+        x=c.getContext`2d`;
+        S=a=>Math.sin(a);
+        C=a=>Math.cos(a);
+        T=a=>Math.tan(a);
+        R=(r,b,g,a)=>`rgba(${r},${g},${b},${a})`;
+        t=0;
+        u=()=>{
+            c.width|=F=(X,Y,Z)=>G=t=>x.fillRect(960+Y*20,Z*20,9,9,X+=(Y-X)/9,Y+=X*(28-Z)/250,Z+=X*Y/250-Z/99);
+            for(i=t?0:(A=[],4096);i--;)A[i]=F(i>>5,i%64,i);
+            for(a of A)a(x.fillStyle='#0001')
+
+            t+=1/60;
+            requestAnimationFrame(u);
+        }
+        requestAnimationFrame(u);
+    </script>
+</body>

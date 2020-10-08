@@ -1,0 +1,20 @@
+<body style="margin:0">
+    <canvas id="c" width=1920 height=1080 style="width:100%;height:100%"></canvas>
+    <script>
+        x=c.getContext`2d`;
+        S=a=>Math.sin(a);
+        C=a=>Math.cos(a);
+        T=a=>Math.tan(a);
+        R=(r,b,g,a)=>`rgba(${r},${g},${b},${a})`;
+        t=0;
+        u=()=>{
+            /*-----------------*/
+            /*  Put code here  */
+            /*-----------------*/
+
+            t+=1/60;
+            requestAnimationFrame(u);
+        }
+        requestAnimationFrame(u);
+    </script>
+</body>
