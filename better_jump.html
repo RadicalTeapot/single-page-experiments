@@ -2,23 +2,6 @@
     <canvas id="canvas"></canvas>
     <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.5/dist/tweakpane.min.js"></script>
     <script>
-        // TODO Set jump using max dist and height instead of velocity and
-        // gravity and log those in pane (see below)
-        /* --------------------------------------------------------------- */
-        // getGravityAndJumpVel = function(vx, xh, h, gm) {
-        //    var v0 = 2 * h * vx / xh;
-        //    var g = -2 * h * vx * vx / (xh * xh);
-        //    console.log('jump vel', v0, 'g', g);
-        //    x = Math.sqrt(-2*h/(g*gm));
-        //    console.log('final length', xh*0.5+x, 'duration', (x+xh)/vx);
-        // }
-        // setJump = function(vx, jumpLength, jumpHeight, gravityMult) {
-        //    xh = jumpLength * vx / (1/Math.sqrt(gravityMult) + 0.5*vx);
-        //    getGravityAndJumpVel(vx, xh, jumpHeight, gravityMult);
-        // }
-        // setJump(2, 2, 2, 3);
-        /* --------------------------------------------------------------- */
-
         /** Asset loader */
         const Loader = {
             images: {
@@ -59,11 +42,15 @@
 
         /** Tweakable parameters */
         const Params = {
-            jumpVel: 7.5,
-            speed: 5,
-            gravity: 0.4,
+            jumpHeight: 2.25,
+            jumpDist: 3.15,
+            speed: 4,
             gravityMult: 2.5,
             fps: 0,
+            showGrid: false,
+
+            gravity: 0,
+            jumpVel: 0,
         }
 
         /** Tweakpane object to tweak parameters */
@@ -73,10 +60,12 @@
                 self.pane = new Tweakpane({title: "Settings"});
                 self.pane.addMonitor(Params, 'fps', {label: 'FPS'});
                 var folder = self.pane.addFolder({title: "Jump", expanded: true});
-                folder.addInput(Params, 'jumpVel');
-                folder.addInput(Params, 'speed');
-                folder.addInput(Params, 'gravity');
-                folder.addInput(Params, 'gravityMult');
+                folder.addInput(Params, 'jumpHeight').on('change', self.setJump);
+                folder.addInput(Params, 'jumpDist').on('change', self.setJump);
+                folder.addInput(Params, 'speed').on('change', self.setJump);
+                folder.addInput(Params, 'gravityMult').on('change', self.setJump);
+                folder = self.pane.addFolder({title: 'Debug', expanded: false});
+                folder.addInput(Params, 'showGrid');
                 folder = self.pane.addFolder({title: "Diagnostics", expanded: false});
                 folder.addMonitor(Game.keys, 'jump');
                 folder.addMonitor(Game.keys, 'left');
@@ -86,7 +75,18 @@
                 folder.addMonitor(Player.vel, '0', {label: 'Player vel x'});
                 folder.addMonitor(Player.vel, '1', {label: 'Player vel y'});
                 folder.addMonitor(Player, 'isGrounded');
+                self.setJump = self.setJump.bind(self);
+                self.setJump();
                 return self;
+            },
+            setJump: function() {
+               const jumpDist = Params.jumpDist * Renderer.tileSize;
+               const jumpHeight = Params.jumpHeight * Renderer.tileSize;
+               // Get length of first part of jump
+               xh = jumpDist / (1 + 1 / Math.sqrt(Params.gravityMult));
+               // Compute jump vertical velocity and gravity using params
+               Params.jumpVel = 2 * jumpHeight * Params.speed / xh;
+               Params.gravity = 2 * jumpHeight * (Params.speed**2) / (xh**2);
             }
         }
 
@@ -111,7 +111,7 @@
                     '0000000000000000',
                     '0000000000000000',
                     '0000000000000000',
-                    'xxxxxxxxxxxxxxxx',
+                    'xx00xxxx000xxxxx',
                 );
 
                 // Create pane to tweak params
@@ -193,6 +193,22 @@
                 this.ctx.fillRect(0, 0, canvas.width, Loader.images.bg_hills.image.height);
                 this.ctx.restore();
             },
+            debug: function() {
+                if (Params.showGrid) {
+                    let i;
+                    this.ctx.strokeStyle='#F005';
+                    this.ctx.beginPath();
+                    for (i = 0; i < Game.world.width; i++) {
+                        this.ctx.moveTo(i*this.tileSize, 0);
+                        this.ctx.lineTo(i*this.tileSize, Game.world.height * this.tileSize);
+                    }
+                    for (i = 0; i < Game.world.height; i++) {
+                        this.ctx.moveTo(0, i*this.tileSize);
+                        this.ctx.lineTo(Game.world.width * this.tileSize, i*this.tileSize);
+                    }
+                    this.ctx.stroke();
+                }
+            },
             /** Render a frame */
             render: function () {
                 // Reset canvas size
@@ -206,6 +222,7 @@
                 Game.world.render(this.ctx);
                 // Render player
                 Player.render(this.ctx);
+                this.debug();
             }
         };
 
