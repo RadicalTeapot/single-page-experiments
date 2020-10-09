@@ -26,11 +26,11 @@ Random closed race track generator.
 
 #### simple_platformer
 
-Barebones platformer implementation based on [this implementation](https://medium.com/@btco_code/writing-a-platformer-for-the-tic-80-virtual-console-6fa737abe476).
+Barebones platformer implementation based on [this TIC80 card](https://tic80.com/play?cart=366).
 
 #### better_jump
 
-Character jump behavior tests, based on [this video](https://youtu.be/hG9SzQxaCm8).
+Character jump behavior tests, based on [this video](https://youtu.be/hG9SzQxaCm8). Uses [Tweakpane](https://cocopon.github.io/tweakpane/) to control parameters.
 
 ### Dwitter related
 
