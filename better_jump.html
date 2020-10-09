@@ -75,6 +75,8 @@
                 folder.addMonitor(Player.vel, '0', {label: 'Player vel x'});
                 folder.addMonitor(Player.vel, '1', {label: 'Player vel y'});
                 folder.addMonitor(Player, 'isGrounded');
+                folder.addMonitor(Params, 'jumpVel');
+                folder.addMonitor(Params, 'gravity');
                 self.setJump = self.setJump.bind(self);
                 self.setJump();
                 return self;
