@@ -59,3 +59,11 @@ Value noise implementation base on [this implementation](https://www.ronja-tutor
 #### promise_image_loading
 
 Pre-loading images using promises.
+
+#### simple_IIFE
+
+Splitting code in separate files using IIFE (immediately invoked function expression) and the revealing module pattern.
+
+#### simple_factory_functions
+
+Example of how to use factory functions to compose an object based on [this explanation](https://medium.com/javascript-scene/javascript-factory-functions-with-es6-4d224591a8b1).
