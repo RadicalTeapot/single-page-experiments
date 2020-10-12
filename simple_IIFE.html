@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, initial-scale=1.0">
+    <title>Simple IIFE</title>
+</head>
+<body>
+   <script src="./scripts/simple_IIFE/module1.js"></script>
+   <script src="./scripts/simple_IIFE/module2.js"></script>
+   <script>
+       'use strict';
+
+        console.log(simpleIIFEModule1.varOne);
+        console.log(simpleIIFEModule1.getVarTwo());
+        simpleIIFEModule1.func();
+        console.log(simpleIIFEModule1.getVarTwo());
+
+        console.log(simpleIIFEModule2.varOne);
+        console.log(simpleIIFEModule2.getVarTwo());
+        simpleIIFEModule2.func();
+        console.log(simpleIIFEModule2.getVarTwo());
+   </script>
+</body>
+</html>
