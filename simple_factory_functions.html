@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, initial-scale=1.0">
+    <title>Simple factory functions</title>
+</head>
+<body>
+    <div id="content">
+        <p> Last key pressed : <span id="key"></span> </p>
+        <p> Update calls : <span id="updateCount"></span> </p>
+    </div>
+    <script src="./scripts/simple_factory_functions/GameFactory.js"></script>
+    <script>
+        'use strict';
+
+        const update = function() {
+            this.updateCount += 1;
+        };
+        const render = function() {
+            this.getLastKeyPressed ? key.innerText = this.getLastKeyPressed(): null;
+            updateCount.innerText = this.updateCount.toString();
+        };
+        let game = {
+            name: 'game',
+            updateCount: 0,
+        };
+        game = [GameFactory.FixedStepFrame({update, render}), GameFactory.KeyboardHandling].reduce((y, f) => f(y), game);
+
+        const loop = t => {
+            game.frame(t);
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
