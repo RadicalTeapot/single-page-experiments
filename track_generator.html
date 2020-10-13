@@ -1,7 +1,7 @@
 <body style="margin:0">
 <canvas id="canvas"></canvas>
 <script>
-ctx = canvas.getContext`2d`, state = 0, p = [], roadSegments = [], baseSeed=seed=-270979885
+ctx = canvas.getContext`2d`, state = 0, p = [], roadSegments = [], baseSeed=seed=-270979847,feature=0
 
 const Util = {
     lerp: (x, y, t) => x * (1 - t) + y * t,
@@ -35,7 +35,7 @@ const RoadGenerator = {
         //p=[[0,0],[100,50],[0,100],[50,100],[50,0]]
         //p=[[0,0],[100,100],[200,0],[300,50],[200,100],[100,0],[0,100]]
 
-        // Seeds of broken roads -> -270979889, -270979903
+        // Seeds of broken roads (e.g -270979847) needs to be used with same window resolution!
 
         // Initial points
         p = [0, 1, 2].map(v => [Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)])
@@ -128,12 +128,10 @@ const RoadGenerator = {
         console.log(`seed ${baseSeed}`);
         seed = baseSeed;
         Util.LCG(); Util.LCG(); Util.LCG();
-        RoadGenerator.init();
-        RoadGenerator.split();
-        /*
-        RoadGenerator.smooth();
-        RoadGenerator.cleanup();
-        */
+        if (feature >= 0) RoadGenerator.init();
+        if (feature >= 1) RoadGenerator.split();
+        if (feature >= 2) RoadGenerator.smooth();
+        if (feature >= 3) RoadGenerator.cleanup();
     }
 }
 
@@ -150,24 +148,25 @@ render = () => {
     // Render road
     ctx.lineWidth = 2 / zoom;
 
-    p.forEach((v,i)=>{
-        ctx.strokeStyle=ctx.fillStyle=`hsl(${i*20},100%,50%)`;
-        ctx.fillRect(v[0]-3/zoom, v[1]-3/zoom, 6/zoom, 6/zoom);
-        ctx.beginPath();
-        ctx.moveTo(v[0], v[1]);
-        ctx.lineTo(p[(i + 1) % p.length][0], p[(i + 1) % p.length][1]);
-        ctx.stroke();
-    });
-
-    roadSegments.forEach(seg => {
-        ctx.beginPath()
-        ctx.strokeStyle=`hsl(0,100%,${100-Math.min(seg[0],1)*50}%)`;
-        ctx.moveTo(seg[1][0], seg[1][1]);
-        seg.length == 3 ?
-            ctx.lineTo(seg[2][0], seg[2][1]) :
-            ctx.quadraticCurveTo(seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
-        ctx.stroke();
-    });
+    if (feature < 3)
+        p.forEach((v,i)=>{
+            ctx.strokeStyle=ctx.fillStyle=`hsl(${i*20},100%,50%)`;
+            ctx.fillRect(v[0]-3/zoom, v[1]-3/zoom, 6/zoom, 6/zoom);
+            ctx.beginPath();
+            ctx.moveTo(v[0], v[1]);
+            ctx.lineTo(p[(i + 1) % p.length][0], p[(i + 1) % p.length][1]);
+            ctx.stroke();
+        });
+    else
+        roadSegments.forEach(seg => {
+            ctx.beginPath()
+            ctx.strokeStyle=`hsl(0,100%,${100-Math.min(seg[0],1)*50}%)`;
+            ctx.moveTo(seg[1][0], seg[1][1]);
+            seg.length == 3 ?
+                ctx.lineTo(seg[2][0], seg[2][1]) :
+                ctx.quadraticCurveTo(seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
+            ctx.stroke();
+        });
 
     requestAnimationFrame(render);
 }
@@ -201,8 +200,10 @@ canvas.ondblclick = e => {
 
 onkeydown = e => {
     switch ((e.which || e.keyCode)) {
+        case 37: baseSeed -= 2; break; // Left arrow
+        case 38: feature = Math.min(feature+1, 3); break; // Up arrow
         case 39: baseSeed += 2; break; // Right arrow
-        case 37: baseSeed -= 2; break; // Right arrow
+        case 40: feature = Math.max(feature-1, 0); break; // Up arrow
     }
     RoadGenerator.run();
 };
