@@ -18,7 +18,7 @@
             this.updateCount += 1;
         };
         const render = function() {
-            this.getLastKeyPressed ? key.innerText = this.getLastKeyPressed(): null;
+            this.getLastKeyPressed ? key.innerText = this.getLastKeyPressed() : null;
             updateCount.innerText = this.updateCount.toString();
         };
         let game = {
@@ -26,12 +26,7 @@
             updateCount: 0,
         };
         game = [GameFactory.FixedStepFrame({update, render}), GameFactory.KeyboardHandling].reduce((y, f) => f(y), game);
-
-        const loop = t => {
-            game.frame(t);
-            requestAnimationFrame(loop);
-        }
-        requestAnimationFrame(loop);
+        game.run();
     </script>
 </body>
 </html>
