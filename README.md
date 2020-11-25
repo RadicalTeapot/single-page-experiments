@@ -79,3 +79,7 @@ Test array allocation and fill speed in javascript.
 #### font_load
 
 Load a font from file in javascript.
+
+#### image_mask
+
+Composite images using masks and offscreen canvas.

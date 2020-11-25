@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, initial-scale=1.0">
+    <title>Image mask</title>
+    <style>body{margin: 0; overflow: hidden;}</style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        'use strict';
+        let ctx = canvas.getContext("2d");
+        let offscreenCanvas = document.createElement('canvas');
+        let offscreenCtx = offscreenCanvas.getContext("2d");
+
+        const loadAll = () => {
+            const loadImage = (path) => new Promise((resolve, reject) => {
+                let image = new Image();
+                image.onload = e => resolve([path.split('/')[2].split('.')[0], image]);
+                image.onerror = e => reject(`Error while loading image at ${path}`);
+                image.src = path;
+            })
+            return Promise.all([
+                loadImage('assets/image_mask/mask.png'),
+                loadImage('assets/image_mask/background.png'),
+                loadImage('assets/image_mask/foreground.png'),
+            ])
+        }
+
+        let images = {};
+        const f = (t) => {
+            offscreenCtx.clearRect(0, 0, images.background.width, images.background.height);
+            offscreenCtx.save();
+            // Draw global mask
+            offscreenCtx.drawImage(images.foreground, 0, 0);
+            offscreenCtx.globalCompositeOperation = 'source-in';
+            // Clip global mask with animated one
+            offscreenCtx.drawImage(images.mask, -images.mask.width + (Math.sin(t * 0.001) * 0.5 + 0.5) * images.mask.width, 0);
+            // Draw foreground on resulting mask
+            offscreenCtx.drawImage(images.foreground, 0, 0);
+            // Draw background behind current image
+            offscreenCtx.globalCompositeOperation = 'destination-over';
+            offscreenCtx.drawImage(images.background, 0, 0);
+            offscreenCtx.restore();
+
+            canvas.width = innerWidth;
+            canvas.height = innerHeight;
+            ctx.fillStyle="#CCC";
+            ctx.fillRect(0, 0, innerWidth, innerHeight);
+            // Draw offscreen canvas
+            ctx.drawImage(offscreenCanvas, 100, 100);
+            requestAnimationFrame(f);
+        }
+        loadAll()
+            .then(results => {
+                results.forEach(([name, image]) => images[name] = image);
+                offscreenCanvas.width = images.background.width;
+                offscreenCanvas.height = images.background.height;
+                requestAnimationFrame(f);
+            })
+            .catch(reason => {throw new Error(reason)})
+        ;
+
+    </script>
+</body>
+</html>
