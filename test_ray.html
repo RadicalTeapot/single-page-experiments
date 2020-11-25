@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test ray</title>
+</head>
+
+<body style="margin: 0; overflow: hidden;">
+    <canvas id="canvas"></canvas>
+    -
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.5/dist/tweakpane.min.js"></script>
+    <script>
+        'use strict';
+
+        const ctx = canvas.getContext("2d");
+
+        const pane = ({
+            params: {
+                gridSize: 20,
+                x: 0.5,         // Relative to innerWidth
+                y: 0.5,         // Relative to innerHeight
+                angle: 0,
+                showLine: true,
+                showGrid: true,
+                lineAlgorithm: 0
+            },
+            create: function () {
+                var self = Object.create(this);
+                self.pane = new Tweakpane({ title: 'Settings' });
+                self.pane.addInput(self.params, 'gridSize', { min: 1, max: 40 });
+                self.pane.addInput(self.params, 'x', { min: 0, max: 1, step: 0.01});
+                self.pane.addInput(self.params, 'y', { min: 0, max: 1, step: 0.01 });
+                self.pane.addInput(self.params, 'angle', { min: 0, max: 360 });
+                self.pane.addInput(self.params, 'showLine');
+                self.pane.addInput(self.params, 'showGrid');
+                self.pane.addInput(self.params, 'lineAlgorithm', {options:{HTML: 0, DDA: 1, Bresenham: 2}})
+                return self;
+            }
+        }).create();
+
+        const rayAlgorithms = {
+            // DDA line algorithm
+            dda: (x, y, x1, y1) => {
+                const dx = x1 - x; const dy = y1 - y;
+                const pointCount = Math.max(Math.abs(dx), Math.abs(dy));
+                const xInc = dx / pointCount; const yInc = dy / pointCount;
+                let points = new Array(pointCount + 1);
+                for (let i = 0; i <= pointCount; i++) {
+                    points[i] = { x: x, y: y };
+                    x += xInc; y += yInc;
+                }
+                return points;
+            },
+            // Bresenham's line algorithm
+            bresenham: (x0, y0, x1, y1) => {
+                let tmp;
+                let swapXY = Math.abs(y1 - y0) > Math.abs(x1 - x0);
+                if (swapXY) {
+                    tmp = x0; x0 = y0; y0 = tmp;
+                    tmp = x1; x1 = y1; y1 = tmp;
+                }
+                if (x0 > x1) {
+                    tmp = x0; x0 = x1; x1 = tmp;
+                    tmp = y0; y0 = y1; y1 = tmp;
+                }
+
+                const dx = x1 - x0;
+                const dy = Math.abs(y1 - y0);
+                const stepY = (y0 < y1) ? 1 : -1;
+                let error = dx;
+                let y = y0;
+                let points = new Array(dx + 1);
+                for (let i = 0; i <= dx; i++) {
+                    points[i] = swapXY ? { x: y, y: i + x0 } : { x: i + x0, y: y };
+                    error -= 2 * dy;
+                    if (error < 0) {
+                        y += stepY;
+                        error += 2 * dx;
+                    }
+                }
+
+                return points;
+            },
+            // From here (http://www.cse.yorku.ca/~amana/research/grid.pdf)
+            voxels: (x, y, dx, dy, gridSize, w, h) => {
+                let vx = (x / gridSize)|0;          // Starting voxel x coordinate
+                let vy = (y / gridSize)|0;          // Starting voxel y coordinate
+                const stepX = dx < 0 ? -1 : 1;      // Coordinate change on x axis
+                const stepY = dy < 0 ? -1 : 1;      // Coordinate change on y axis
+                let tMaxX = Infinity;               // Distance along ray to closest vertical voxel boundary from starting x position
+                let tDeltaX = 0;                    // Move distance along ray to move 1 voxel horizontally
+                let tMaxY = Infinity;               // Distance along ray to closest horizontal voxel boundary from starting y position
+                let tDeltaY = 0;                    // Move distance along ray to move 1 voxel vertical
+                if (Math.abs(dx) > 0) {
+                    // Next voxel boundary is vx + 1 if dx is positive and vx + 0 if dx is negative
+                    // Then, from line eq, x + tMaxX * dx = next voxel boundary => tMaxX = (next - x) / dx
+                    tMaxX = ((vx + (dx < 0 ? 0 : 1)) * gridSize - x) / dx;
+                    // From line eq, x0 + tStepX * dx = x0 + gridSize => tStepX = gridSize / dx
+                    tDeltaX = stepX * gridSize / dx;
+                }
+                if (Math.abs(dy) > 0) {
+                    tMaxY = ((vy + (dy < 0 ? 0 : 1)) * gridSize - y) / dy;
+                    tDeltaY = stepY * gridSize / dy;
+                }
+
+                let points = [{x:vx, y:vy}];
+                while (vx >= 0 && vx < Math.floor(w/gridSize) && vy >= 0 && vy < Math.floor(h/gridSize)) {
+                    if (tMaxX < tMaxY) {
+                        tMaxX += tDeltaX;
+                        vx += stepX;
+                    } else {
+                        tMaxY += tDeltaY;
+                        vy += stepY;
+                    }
+                    points.push({x:vx, y:vy});
+                }
+                return points;
+            }
+        }
+
+        const renderer = ({
+            darkColor: "#CCC",
+            pointColor: "#F88",
+            lineColor: "#555",
+            highlightedColor: "#FF8",
+            create: function (params) {
+                var self = Object.create(this);
+                self.params = params;
+                return self;
+            },
+            render: function (w, h) {
+                const x = Math.floor(this.params.x * w);
+                const y = Math.floor(this.params.y * h);
+                const dx = Math.sin(this.params.angle * Math.PI / 180);
+                const dy = Math.cos(this.params.angle * Math.PI / 180);
+                const maxLength = Math.ceil(Math.sqrt(w * w + h * h));
+
+                ctx.fillStyle = "white";
+                ctx.fillRect(0, 0, w, h);
+                this.highlightGridCells(rayAlgorithms.voxels(x, y, dx, dy, this.params.gridSize, w, h));
+                if (this.params.showGrid)
+                    this.renderGrid(w,h);
+                if (this.params.showLine) {
+                    if (this.params.lineAlgorithm == 0)
+                        this.renderLine(x, y, dx, dy, maxLength);
+                    else if (this.params.lineAlgorithm == 1)
+                        this.renderLineFromPoints(rayAlgorithms.dda(x, y, x + Math.floor(dx * maxLength), y + Math.floor(dy * maxLength)));
+                    else
+                        this.renderLineFromPoints(rayAlgorithms.bresenham(x, y, x + Math.floor(dx * maxLength), y + Math.floor(dy * maxLength)));
+                }
+                this.renderPoint(x, y);
+            },
+            highlightGridCells: function(voxels) {
+                ctx.fillStyle = this.highlightedColor;
+                ctx.beginPath();
+                voxels.forEach(({x, y}) =>
+                    ctx.rect(x * this.params.gridSize, y * this.params.gridSize, this.params.gridSize, this.params.gridSize)
+                );
+                ctx.fill();
+            },
+            renderGrid: function (w, h) {
+                ctx.strokeStyle = this.darkColor;
+                ctx.beginPath();
+                for (let i = 0; i < w; i += this.params.gridSize) {
+                    ctx.moveTo(i, 0);
+                    ctx.lineTo(i, h);
+                }
+                for (let i = 0; i < h; i += this.params.gridSize) {
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(w, i);
+                }
+                ctx.stroke();
+            },
+            renderPoint: function (x, y) {
+                ctx.fillStyle = this.pointColor;
+                ctx.strokeStyle = this.lineColor;
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            },
+            renderLine: function(x, y, dx, dy, l) {
+                ctx.strokeStyle = this.lineColor;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + dx * l, y + dy * l);
+                ctx.stroke();
+            },
+            renderLineFromPoints: function(pointList) {
+                ctx.fillStyle = this.lineColor;
+                ctx.beginPath();
+                pointList.forEach(({x, y}) => ctx.rect(x, y, 1, 1));
+                ctx.fill();
+            }
+        }).create(pane.params);
+
+        const f = t => {
+            canvas.width = innerWidth; canvas.height = innerHeight;
+            renderer.render(innerWidth, innerHeight);
+            requestAnimationFrame(f);
+        }
+        requestAnimationFrame(f);
+    </script>
+</body>
+
+</html>
