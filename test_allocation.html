@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test allocation</title>
+</head>
+
+<body>
+    <label for="sizeInput">Array size</label>
+    <input type="number" id="sizeInput" min="1" value="1000000"><br />
+    <label for="numberOfRunInput"># of runs</label>
+    <input type="number" id="numberOfRunInput" min="1" value="5"><br />
+    <input type="button" id="runButton" value="Run">
+    <p>No preallocation (avg): <span id="nopre">0</span>ms</p>
+    <p>Preallocation (avg): <span id="pre">0</span>ms</p>
+    <script>
+        const test = () => {
+            const size = parseInt(sizeInput.value);
+            const runs = parseInt(numberOfRunInput.value);
+            // No preallocation
+            let sum = 0, start = 0, end = 0, a = [];
+            for (let j = 0; j < runs; j++)
+            {
+                start = performance.now();
+                a = [];
+                for (let i = 0; i < size; i++)
+                    a.push(i);
+                end = performance.now();
+                sum += end - start;
+            }
+            nopre.innerText = sum / runs;
+
+            // Preallocation
+            sum = 0;
+            for (let j = 0; j < runs; j++)
+            {
+                start = performance.now();
+                a = new Array(size);
+                for (let i = 0; i < size; i++)
+                    a[i] = i;
+                end = performance.now();
+                sum += end - start;
+            }
+            pre.innerText = sum / runs;
+        }
+        runButton.onclick = test;
+    </script>
+</body>
+
+</html>

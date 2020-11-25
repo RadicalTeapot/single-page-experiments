@@ -70,4 +70,8 @@ Example of how to use factory functions to compose an object based on [this expl
 
 #### test_ray
 
-Exploration of various 2D line drawing / ray intersection algorithms([Bresenham](https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm) (`plotLineHigh` in the __All cases__ section), [DDA](https://medium.com/@Heyshubham/dda-line-drawing-algorithm-1cd9334516bf), [Fast voxel traversal](http://www.cse.yorku.ca/~amana/research/grid.pdf))
+Exploration of various 2D line drawing / ray intersection algorithms([Bresenham](https://en.wikipedia.org/wiki/Bresenham%27s_line_algorithm) (`plotLineHigh` in the __All cases__ section), [DDA](https://medium.com/@Heyshubham/dda-line-drawing-algorithm-1cd9334516bf), [Fast voxel traversal](http://www.cse.yorku.ca/~amana/research/grid.pdf)).
+
+#### test_allocation
+
+Test array allocation and fill speed in javascript.
