@@ -75,3 +75,7 @@ Exploration of various 2D line drawing / ray intersection algorithms([Bresenham]
 #### test_allocation
 
 Test array allocation and fill speed in javascript.
+
+#### font_load
+
+Load a font from file in javascript.
