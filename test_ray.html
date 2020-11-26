@@ -30,8 +30,8 @@
                 var self = Object.create(this);
                 self.pane = new Tweakpane({ title: 'Settings' });
                 self.pane.addInput(self.params, 'gridSize', { min: 1, max: 40 });
-                self.pane.addInput(self.params, 'x', { min: 0, max: 1, step: 0.01});
-                self.pane.addInput(self.params, 'y', { min: 0, max: 1, step: 0.01 });
+                self.pane.addInput(self.params, 'x', { min: 0, max: 1, step: 0.001});
+                self.pane.addInput(self.params, 'y', { min: 0, max: 1, step: 0.001 });
                 self.pane.addInput(self.params, 'angle', { min: 0, max: 360 });
                 self.pane.addInput(self.params, 'showLine');
                 self.pane.addInput(self.params, 'showGrid');
@@ -105,22 +105,20 @@
                     tDeltaY = stepY * gridSize / dy;
                 }
 
-                let t = Math.min(tMaxX, tMaxY);
-                let x0 = x, y0 = y;
-                x = x0 + t * dx; y = y0 + t * dy;
-                let points = [{vx, vy, x, y}];
+                let t = 0, x0 = x, y0 = y;
+                let points = [];
                 while (vx >= 0 && vx < Math.floor(w/gridSize) && vy >= 0 && vy < Math.floor(h/gridSize)) {
-                    if (tMaxX < tMaxY) {
-                        tMaxX += tDeltaX;
-                        vx += stepX;
-                        t = tMaxX;
-                    } else {
-                        tMaxY += tDeltaY;
-                        vy += stepY;
-                        t = tMaxY;
-                    }
                     x = x0 + t * dx; y = y0 + t * dy;
                     points.push({vx, vy, x, y});
+                    if (tMaxX < tMaxY) {
+                        t = tMaxX;
+                        tMaxX += tDeltaX;
+                        vx += stepX;
+                    } else {
+                        t = tMaxY;
+                        tMaxY += tDeltaY;
+                        vy += stepY;
+                    }
                 }
                 return points;
             }
