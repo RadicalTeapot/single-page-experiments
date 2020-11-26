@@ -105,16 +105,22 @@
                     tDeltaY = stepY * gridSize / dy;
                 }
 
-                let points = [{x:vx, y:vy}];
+                let t = Math.min(tMaxX, tMaxY);
+                let x0 = x, y0 = y;
+                x = x0 + t * dx; y = y0 + t * dy;
+                let points = [{vx, vy, x, y}];
                 while (vx >= 0 && vx < Math.floor(w/gridSize) && vy >= 0 && vy < Math.floor(h/gridSize)) {
                     if (tMaxX < tMaxY) {
                         tMaxX += tDeltaX;
                         vx += stepX;
+                        t = tMaxX;
                     } else {
                         tMaxY += tDeltaY;
                         vy += stepY;
+                        t = tMaxY;
                     }
-                    points.push({x:vx, y:vy});
+                    x = x0 + t * dx; y = y0 + t * dy;
+                    points.push({vx, vy, x, y});
                 }
                 return points;
             }
@@ -155,9 +161,13 @@
             highlightGridCells: function(voxels) {
                 ctx.fillStyle = this.highlightedColor;
                 ctx.beginPath();
-                voxels.forEach(({x, y}) =>
-                    ctx.rect(x * this.params.gridSize, y * this.params.gridSize, this.params.gridSize, this.params.gridSize)
+                voxels.forEach(({vx, vy}) =>
+                    ctx.rect(vx * this.params.gridSize, vy * this.params.gridSize, this.params.gridSize, this.params.gridSize)
                 );
+                ctx.fill();
+                ctx.fillStyle = this.pointColor;
+                ctx.beginPath();
+                voxels.forEach(({x, y}) => ctx.rect(x - 3, y - 3, 6, 6));
                 ctx.fill();
             },
             renderGrid: function (w, h) {
