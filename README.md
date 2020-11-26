@@ -83,3 +83,7 @@ Load a font from file in javascript.
 #### image_mask
 
 Composite images using masks and offscreen canvas.
+
+#### test_raycasting
+
+Simple ray-casting rendering implementation (inspired by [this](https://technomancy.us/193) and [this](http://www.playfuljs.com/a-first-person-engine-in-265-lines/)).

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test raycasting</title>
+</head>
+<body style="margin: 0px; overflow: hidden;">
+    <canvas id=canvas></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.5/dist/tweakpane.min.js"></script>
+    <script>
+        'use strict';
+
+        const ctx = canvas.getContext("2d");
+        const world = [
+            "00000000000",
+            "000#####000",
+            "00##000##00",
+            "00#00000#00",
+            "00#00000#00",
+            "00##000##00",
+            "000#000#000",
+            "00000000000",
+        ];
+        const pane = ({
+            params: {
+                cameraHeight: 0.5,      // Relative to innerHeight
+                FOV: 90,
+                speed: 10,
+                x: 0,
+                y: 0,
+                direction: Math.PI / 4.,
+            },
+            create: function () {
+                let self = Object.create(this);
+                self.pane = new Tweakpane({ title: "Settings" });
+                self.pane.addInput(self.params, 'cameraHeight', {min: 0, max: 1, step: 0.05});
+                self.pane.addInput(self.params, 'FOV', {min: 45, max: 120});
+                self.pane.addInput(self.params, 'speed', {min: 1, max: 100, step: 1});
+                self.pane.addMonitor(self.params, 'x');
+                self.pane.addMonitor(self.params, 'y');
+                self.pane.addMonitor(self.params, 'direction');
+                return self;
+            },
+        }).create();
+
+        let keys = {up: false, down: false, strafeLeft: false, strafeRight: false, rotateLeft: false, rotateRight: false};
+        onkeydown = e => {
+            switch(e.key) {
+                case "ArrowDown": case "s": case "S":
+                    keys.down = true;
+                    break;
+                case "ArrowUp": case "w": case "W":
+                    keys.up = true;
+                    break;
+                case "ArrowLeft": case "a": case "A":
+                    keys.strafeLeft = true;
+                    break;
+                case "ArrowRight": case "d": case "D":
+                    keys.strafeRight = true;
+                    break;
+                case "q": case "Q":
+                    keys.rotateLeft = true;
+                    break;
+                case "e": case "E":
+                    keys.rotateRight = true;
+                    break;
+            }
+        }
+        onkeyup = e => {
+            switch(e.key) {
+                case "ArrowDown": case "s": case "S":
+                    keys.down = false;
+                    break;
+                case "ArrowUp": case "w": case "W":
+                    keys.up = false;
+                    break;
+                case "ArrowLeft": case "a": case "A":
+                    keys.strafeLeft = false;
+                    break;
+                case "ArrowRight": case "d": case "D":
+                    keys.strafeRight = false;
+                    break;
+                case "q": case "Q":
+                    keys.rotateLeft = false;
+                    break;
+                case "e": case "E":
+                    keys.rotateRight = false;
+                    break;
+            }
+        }
+
+        const raycaster = ((pane, world) => {
+            // Private variables
+            const resolution = 2;
+            const worldWidth = world[0].length;
+            const worldHeight = world.length;
+            const skyColor = "blue";
+            const floorColor = "green";
+            const params = pane.params;
+            const wallHeight = 3;
+            const maxDistance = 300;
+
+            return {
+                cast: function(x, y, angle) {
+                    const dx = Math.cos(angle);
+                    const dy = Math.sin(angle);
+                    const stepX = dx < 0 ? -1 : 1;
+                    const stepY = dy < 0 ? -1 : 1;
+                    let vx = Math.floor(x), vy = Math.floor(y);
+                    x = x-vx; y = y-vy;
+                    vx = vx % worldWidth; vy = vy % worldHeight;
+                    if (vx < 0) vx = worldWidth - (Math.abs(vx) % worldWidth);
+                    if (vy < 0) vy = worldHeight - (Math.abs(vy) % worldHeight);
+                    let tMaxX = Infinity, tMaxY = Infinity;
+                    let tDeltaX = 0, tDeltaY = 0;
+                    if (Math.abs(dx) > 0) {
+                        tMaxX = ((dx < 0 ? 0 : 1)-x) / dx;
+                        tDeltaX = stepX / dx;
+                    }
+                    if (Math.abs(dy) > 0) {
+                        tMaxY = ((dy < 0 ? 0 : 1)-y) / dy;
+                        tDeltaY = stepY / dy;
+                    }
+
+                    let points = [];
+                    // Distance from original point
+                    // Note: We can just use t here from the line equation since vector (dx, dy) is normalized (dx, dy are points on the unit circle)
+                    let distance = 0;
+                    while (vx >= 0 && vx < worldWidth && vy >= 0 && vy < worldHeight && distance <= maxDistance) {
+                        points.push({x:vx, y:vy, distance:distance});
+                        if (tMaxX < tMaxY) {
+                            distance = tMaxX;
+                            tMaxX += tDeltaX;
+                            vx = (vx + stepX) % worldWidth;
+                            if (vx < 0) vx = worldWidth - (Math.abs(vx) % worldWidth);
+                        } else {
+                            distance = tMaxY;
+                            tMaxY += tDeltaY;
+                            vy = (vy + stepY) % worldHeight;
+                            if (vy < 0) vy = worldHeight - (Math.abs(vy) % worldHeight);
+                        }
+                    }
+                    return points;
+                },
+
+                project: function (distance, angle, scale) {
+                    const z = distance * Math.cos(angle);
+                    const height = innerHeight * wallHeight * scale / z;
+                    const top = (innerHeight * params.cameraHeight * scale) / z - height;
+                    return { height, top };
+                },
+
+                render: function () {
+                    const numberOfColumns = innerWidth / resolution;
+                    const angularStep = params.FOV / numberOfColumns;
+                    const scale = 1 / Math.tan(params.FOV * Math.PI / 360); // scale = 1/tan(fov/2) with fov in radians
+                    ctx.save();
+                    this.renderSky();
+                    this.renderFloor();
+                    for (let i = 0; i < numberOfColumns; i++) {
+                        let angle = ((i - numberOfColumns/2) * angularStep) * Math.PI / 180;
+                        const voxels = this.cast(params.x, params.y, angle + params.direction);
+                        const wall = voxels.find(({x, y}) => world[y].charAt(x) == '#');
+                        if (wall !== undefined)
+                        {
+                            const { height, top } = this.project(wall.distance, angle, scale);
+                            this.renderWall(i, top, height, `rgb(${Math.floor(255*wall.x/worldWidth)}, ${Math.floor(255*wall.y/worldHeight)},33)`);
+                        }
+                    }
+                    ctx.restore();
+                },
+
+                renderSky: function() {
+                    ctx.fillStyle = skyColor;
+                    ctx.fillRect(0, 0, innerWidth, innerHeight);
+                },
+                renderFloor: function() {
+                    ctx.fillStyle = floorColor;
+                    ctx.fillRect(0, innerHeight / 2, innerWidth, innerHeight / 2);
+                },
+                renderWall: function(x, top, height, color) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(x * resolution, innerHeight / 2 + top, resolution, height);
+                },
+            };
+        })(pane, world);
+
+        const update = () => {
+            if (keys.up) {
+                pane.params.x += pane.params.speed * Math.cos(pane.params.direction) * 0.005;
+                pane.params.y += pane.params.speed * Math.sin(pane.params.direction) * 0.005;
+            }
+            if (keys.down) {
+                pane.params.x -= pane.params.speed * Math.cos(pane.params.direction) * 0.005;
+                pane.params.y -= pane.params.speed * Math.sin(pane.params.direction) * 0.005;
+            }
+            if (keys.strafeLeft)
+            {
+                pane.params.x -= pane.params.speed * -Math.sin(pane.params.direction) * 0.005;
+                pane.params.y -= pane.params.speed * Math.cos(pane.params.direction) * 0.005;
+            }
+            if (keys.strafeRight)
+            {
+                pane.params.x += pane.params.speed * -Math.sin(pane.params.direction) * 0.005;
+                pane.params.y += pane.params.speed * Math.cos(pane.params.direction) * 0.005;
+            }
+            if (keys.rotateLeft)
+            {
+                pane.params.direction -= pane.params.speed * 0.002;
+            }
+            if (keys.rotateRight)
+            {
+                pane.params.direction += pane.params.speed * 0.002;
+            }
+        }
+
+        const render = () => {
+            canvas.width = innerWidth; canvas.height = innerHeight;
+            ctx.fillRect(0,0,innerWidth, innerHeight);
+            raycaster.render();
+        }
+
+        const f = t => {
+            update();
+            render();
+            requestAnimationFrame(f);
+        }
+        requestAnimationFrame(f);
+    </script>
+</body>
+</html>
