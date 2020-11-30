@@ -2,20 +2,20 @@
     <canvas id=a></canvas>
     <script>
         c = a.getContext`2d`;
-        eio = (x) => -2 * x * x * x + 3 * x * x
+        eio = (x) => -2 * x * x * x + 3 * x * x;
         lerp = (a, b, t) => a * (1 - t) + b * t;
-        seed = ogSeed = 684651685
+        seed = ogSeed = 684651685;
+        sizeFactor = 10;
         // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
         LCG = () => ((seed = Math.imul(741103597, seed)) >>> 0) / 2 ** 32;
         f = () => {
-            const sizeFactor = 9;
             a.width = 1 << sizeFactor; a.height = 1 << sizeFactor;
             seed = ogSeed = ogSeed + 2;
-            Array.apply(null, new Array(10)).map(i=>LCG());
+            LCG(); LCG(); LCG(); LCG(); LCG();
             grid = new Array(1 << (2 * sizeFactor));
             for (i = 0; i < 1 << (2 * sizeFactor); i++) grid[i] = LCG();
             imageData = c.createImageData(1 << sizeFactor, 1 << sizeFactor);
-            for (j = 0; j <= sizeFactor-4; j++) {
+            for (j = 0; j <= sizeFactor - 4; j++) {
                 let factor = sizeFactor - j;
                 for (i = 0; i < 1 << (sizeFactor * 2); i++) {
                     x = i & ((1 << sizeFactor) - 1); y = i >> sizeFactor;
@@ -25,16 +25,14 @@
                     c3 = cxl + (cyl << sizeFactor); c4 = cxh + (cyl << sizeFactor);
                     tx = eio(x / (1 << factor) - (x >> factor)); ty = eio(y / (1 << factor) - (y >> factor));
                     cup = lerp(grid[c1], grid[c2], tx); clo = lerp(grid[c3], grid[c4], tx);
-                    n = lerp(clo, cup, ty);
-                    imageData.data[i * 4 + 0] += n * 255 / (2 << j);
-                    imageData.data[i * 4 + 1] += n * 255 / (2 << j);
-                    imageData.data[i * 4 + 2] += n * 255 / (2 << j);
+                    n = lerp(clo, cup, ty) * 255 / (2 << j);
+                    imageData.data[i * 4 + 0] += n; imageData.data[i * 4 + 1] += n; imageData.data[i * 4 + 2] += n;
                     imageData.data[i * 4 + 3] = 255;
                 }
             }
             c.putImageData(imageData, 0, 0);
         }
-        onclick = e => { requestAnimationFrame(f) }
+        onclick = f;
         requestAnimationFrame(f);
     </script>
 </body>
