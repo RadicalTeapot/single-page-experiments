@@ -1,42 +1,40 @@
 <body style=margin:0>
     <canvas id=a></canvas>
-   <script>
-       c=a.getContext`2d`;
-       eio=(x)=>-2*x*x*x+3*x*x
-       lerp=(a,b,t)=>a*(1-t)+b*t;
-       seed=ogSeed=684651685
-       // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
-       LCG=()=>((seed=Math.imul(741103597,seed))>>>0)/2**32;
-       f=()=>{
-           seed=ogSeed=ogSeed+2;
-           LCG();LCG();LCG();
-           a.width=1024;a.height=768;
-           grid=[];
-           const gridSize=128;
-           width = Math.ceil(a.width/gridSize); height = Math.ceil(a.height/gridSize);
-           for (i=0;i<width*height;i++)
-               grid[i]=LCG()
-
-           imageData = c.createImageData(a.width, a.height);
-           for (i = 0; i < imageData.data.length/4; i++) {
-               x=i%(a.width);y=Math.floor(i/a.width);
-               c1=Math.floor(x/gridSize)+(Math.ceil(y/gridSize)%height)*width;
-               c2=(Math.ceil(x/gridSize)%width)+(Math.ceil(y/gridSize)%height)*width;
-               c3=Math.floor(x/gridSize)+Math.floor(y/gridSize)*width;
-               c4=(Math.ceil(x/gridSize)%width)+Math.floor(y/gridSize)*width;
-               tx=eio(x/gridSize-Math.floor(x/gridSize));
-               ty=eio(y/gridSize-Math.floor(y/gridSize));
-               cup=lerp(grid[c1],grid[c2],tx);
-               clo=lerp(grid[c3],grid[c4],tx);
-               n=lerp(clo,cup,ty);
-               imageData.data[i*4+0]=n*255;
-               imageData.data[i*4+1]=n*255;
-               imageData.data[i*4+2]=n*255;
-               imageData.data[i*4+3]=255;
-           }
-           c.putImageData(imageData,0,0);
-       }
-       onclick=e=>{requestAnimationFrame(f)}
-       requestAnimationFrame(f);
-   </script>
+    <script>
+        c = a.getContext`2d`;
+        eio = (x) => -2 * x * x * x + 3 * x * x
+        lerp = (a, b, t) => a * (1 - t) + b * t;
+        seed = ogSeed = 684651685
+        // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
+        LCG = () => ((seed = Math.imul(741103597, seed)) >>> 0) / 2 ** 32;
+        f = () => {
+            const sizeFactor = 9;
+            a.width = 1 << sizeFactor; a.height = 1 << sizeFactor;
+            seed = ogSeed = ogSeed + 2;
+            Array.apply(null, new Array(10)).map(i=>LCG());
+            grid = new Array(1 << (2 * sizeFactor));
+            for (i = 0; i < 1 << (2 * sizeFactor); i++) grid[i] = LCG();
+            imageData = c.createImageData(1 << sizeFactor, 1 << sizeFactor);
+            for (j = 0; j <= sizeFactor-4; j++) {
+                let factor = sizeFactor - j;
+                for (i = 0; i < 1 << (sizeFactor * 2); i++) {
+                    x = i & ((1 << sizeFactor) - 1); y = i >> sizeFactor;
+                    cxl = (x >> factor) & ((1 << sizeFactor) - 1); cxh = (cxl + 1) & ((1 << sizeFactor) - 1);
+                    cyl = (y >> factor) & ((1 << sizeFactor) - 1); cyh = (cyl + 1) & ((1 << sizeFactor) - 1);
+                    c1 = cxl + (cyh << sizeFactor); c2 = cxh + (cyh << sizeFactor);
+                    c3 = cxl + (cyl << sizeFactor); c4 = cxh + (cyl << sizeFactor);
+                    tx = eio(x / (1 << factor) - (x >> factor)); ty = eio(y / (1 << factor) - (y >> factor));
+                    cup = lerp(grid[c1], grid[c2], tx); clo = lerp(grid[c3], grid[c4], tx);
+                    n = lerp(clo, cup, ty);
+                    imageData.data[i * 4 + 0] += n * 255 / (2 << j);
+                    imageData.data[i * 4 + 1] += n * 255 / (2 << j);
+                    imageData.data[i * 4 + 2] += n * 255 / (2 << j);
+                    imageData.data[i * 4 + 3] = 255;
+                }
+            }
+            c.putImageData(imageData, 0, 0);
+        }
+        onclick = e => { requestAnimationFrame(f) }
+        requestAnimationFrame(f);
+    </script>
 </body>
