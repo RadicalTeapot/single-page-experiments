@@ -5,27 +5,34 @@
         eio = (x) => -2 * x * x * x + 3 * x * x;
         lerp = (a, b, t) => a * (1 - t) + b * t;
         seed = ogSeed = 684651685;
-        sizeFactor = 10;
+        size = 10;
         // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
         LCG = () => ((seed = Math.imul(741103597, seed)) >>> 0) / 2 ** 32;
         f = () => {
-            a.width = 1 << sizeFactor; a.height = 1 << sizeFactor;
+            a.width = 1 << size; a.height = 1 << size;
             seed = ogSeed = ogSeed + 2;
             LCG(); LCG(); LCG(); LCG(); LCG();
-            grid = new Array(1 << (2 * sizeFactor));
-            for (i = 0; i < 1 << (2 * sizeFactor); i++) grid[i] = LCG();
-            imageData = c.createImageData(1 << sizeFactor, 1 << sizeFactor);
-            for (j = 0; j <= sizeFactor - 4; j++) {
-                let factor = sizeFactor - j;
-                for (i = 0; i < 1 << (sizeFactor * 2); i++) {
-                    x = i & ((1 << sizeFactor) - 1); y = i >> sizeFactor;
-                    cxl = (x >> factor) & ((1 << sizeFactor) - 1); cxh = (cxl + 1) & ((1 << sizeFactor) - 1);
-                    cyl = (y >> factor) & ((1 << sizeFactor) - 1); cyh = (cyl + 1) & ((1 << sizeFactor) - 1);
-                    c1 = cxl + (cyh << sizeFactor); c2 = cxh + (cyh << sizeFactor);
-                    c3 = cxl + (cyl << sizeFactor); c4 = cxh + (cyl << sizeFactor);
-                    tx = eio(x / (1 << factor) - (x >> factor)); ty = eio(y / (1 << factor) - (y >> factor));
+            grid = new Array(1 << (2 * size));
+            for (i = 0; i < 1 << (2 * size); i++) grid[i] = LCG();
+            /*
+            Fractal indices in grid
+            grid = 0,1,2,3,4,5,6,7  -> size = 3                 -> indices = 0,1,2,3...
+            j = 0  ^ ^ ^ ^ ^ ^ ^ ^  -> cell size = size - j = 3 -> indices = 0,1,2,3...
+            j = 1  ^   ^   ^   ^    -> cell size = size - j = 2 -> indices = 0,2,4,6...
+            j = 2  ^       ^        -> cell size = 1            -> indices = 0,4,0,4... => x = Math.floor(x % (2**size) / j) * j
+            tx -> 0|------|1        -> fract(x / (2 ** j))
+            */
+            imageData = c.createImageData(1 << size, 1 << size);
+            for (j = 0; j <= size - 4; j++) {
+                for (i = 0; i < 1 << (size * 2); i++) {
+                    x = i & ((1 << size) - 1); y = i >> size;
+                    cxl = (x >> j) << j; cxh = (cxl + (1 << j)) & ((1 << size) - 1);
+                    cyl = (y >> j) << j; cyh = (cyl + (1 << j)) & ((1 << size) - 1);
+                    c1 = cxl + (cyh << size); c2 = cxh + (cyh << size);
+                    c3 = cxl + (cyl << size); c4 = cxh + (cyl << size);
+                    tx = eio(x / (1 << j) - (x >> j)); ty = eio(y / (1 << j) - (y >> j));
                     cup = lerp(grid[c1], grid[c2], tx); clo = lerp(grid[c3], grid[c4], tx);
-                    n = lerp(clo, cup, ty) * 255 / (2 << j);
+                    n = lerp(clo, cup, ty) * 255 / (2 << (size - j - 4));
                     imageData.data[i * 4 + 0] += n; imageData.data[i * 4 + 1] += n; imageData.data[i * 4 + 2] += n;
                     imageData.data[i * 4 + 3] = 255;
                 }
