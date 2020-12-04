@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxel space</title>
+</head>
+<body style="margin: 0; overflow: hidden;">
+    <canvas id="canvas"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.7/dist/tweakpane.min.js"></script>
+    <script>
+        const ctx = canvas.getContext("2d");
+
+        const pane = ({
+            params: {
+                noiseMapSizeFactor: 10,
+                noiseMapUseFloat: false,
+                cameraX: 0,
+                cameraY: 0,
+                cameraYaw: 0,
+                cameraPitch: 0,
+                cameraRoll: 0,
+                cameraFOV: 90,
+                cameraHeight: 2,
+                cameraFar: 20,
+            },
+            callbacks: {
+                onNoiseMapReload: (sizeFactor) => {}
+            },
+            create: function() {
+                let self = Object.create(this);
+                const pane = new Tweakpane({title: 'Settings'});
+                let folder = pane.addFolder({title: 'Noise map'});
+                folder.addInput(self.params, 'noiseMapSizeFactor', {min:4, step:1, max:12, label: 'Size'})
+                    .on('change', value=> self.callbacks.onNoiseMapReload(value));
+                folder.addInput(self.params, 'noiseMapUseFloat', { label: 'Use float' });
+                folder.addButton({title:'Regenerate'})
+                    .on('click', value=> self.callbacks.onNoiseMapReload(self.params.noiseMapSizeFactor));
+                folder = pane.addFolder({title: 'Camera'});
+                folder.addInput(self.params, 'cameraFOV', {min:45, max:120, step:1, label:'FOV'});
+                folder.addInput(self.params, 'cameraHeight', {min:1, max:10, step:0.1, label:'Height'});
+                folder.addInput(self.params, 'cameraX', {label: 'x'});
+                folder.addInput(self.params, 'cameraY', {label: 'y'});
+                folder.addInput(self.params, 'cameraYaw', {min: 0, max: 360, label: 'Yaw'});
+                folder.addInput(self.params, 'cameraPitch', {min: 0, max: 360, label: 'Pitch'});
+                folder.addInput(self.params, 'cameraRoll', {min: 0, max: 360, label: 'Roll'});
+                folder.addInput(self.params, 'cameraFar', {label: 'Far'});
+                return self;
+            },
+        }).create();
+
+        const renderers = ((pane) => {
+            const heightMapFactory = (() => {
+                const getNoiseGenerator = (sizeFactor) => {
+                    const easeInOutCubic = x => -2 * x * x * x + 3 * x * x;
+                    const lerp = (a, b, t) => a * (1 - t) + b * t;
+                    let grid = new Array(1 << (2 * sizeFactor));
+                    for (i = 0; i < 1 << (2 * sizeFactor); i++)
+                        grid[i] = Math.random();
+
+                    return {
+                        getNoise: function(x, y) {
+                            if (pane.params.noiseMapUseFloat)
+                                return this.getNoiseFloat(x, y);
+                            return this.getNoiseInt(x, y);
+                        },
+                        /** Value noise */
+                        getNoiseInt: (x, y) => {
+                            x = x & ((1 << sizeFactor) - 1);
+                            y = y & ((1 << sizeFactor) - 1);
+                            let currentGridX = 0, currentGridY = 0, nextGridX = 0, nextGridY = 0;
+                            let cell1 = 0, cell2 = 0, cell3 = 0, cell4 = 0;
+                            let gradientFactorX = 0, gradientFactorY = 0, gradientUp = 0, gradientDown = 0, noise = 0;
+                            for (let j = 0; j <= sizeFactor - 6; j++) {
+                                currentGridX = (x >> j) << j;
+                                nextGridX = (currentGridX + (1 << j)) & ((1 << sizeFactor) - 1);
+                                currentGridY = (y >> j) << j;
+                                nextGridY = (currentGridY + (1 << j)) & ((1 << sizeFactor) - 1);
+                                cell1 = currentGridX + (nextGridY << sizeFactor);
+                                cell2 = nextGridX + (nextGridY << sizeFactor);
+                                cell3 = currentGridX + (currentGridY << sizeFactor);
+                                cell4 = nextGridX + (currentGridY << sizeFactor);
+                                gradientFactorX = easeInOutCubic(x / (1 << j) - (x >> j));
+                                gradientFactorY = easeInOutCubic(y / (1 << j) - (y >> j));
+                                gradientUp = lerp(grid[cell1], grid[cell2], gradientFactorX);
+                                gradientDown = lerp(grid[cell3], grid[cell4], gradientFactorX);
+                                noise += lerp(gradientDown, gradientUp, gradientFactorY) / (2 << (sizeFactor - j - 6));
+                            }
+                            return noise;
+                        },
+                        getNoiseFloat: (x, y) => {
+                            const size = 2 ** sizeFactor;
+                            x = x >= 0 ? x % size : size - (Math.abs(x) % size);
+                            y = y >= 0 ? y % size : size - (Math.abs(y) % size);
+                            let currentGridX = 0, currentGridY = 0, nextGridX = 0, nextGridY = 0;
+                            let cell1 = 0, cell2 = 0, cell3 = 0, cell4 = 0;
+                            let gradientFactorX = 0, gradientFactorY = 0, gradientUp = 0, gradientDown = 0, noise = 0;
+                            let currentSize = 0;
+                            for (let j = 0; j <= sizeFactor - 6; j++) {
+                                currentSize = 2 ** j;
+                                currentGridX = Math.floor(x / currentSize) * currentSize;
+                                nextGridX = (currentGridX + currentSize) % size;
+                                currentGridY = Math.floor(y / currentSize) * currentSize;
+                                nextGridY = (currentGridY + currentSize) % size;
+                                cell1 = currentGridX + nextGridY * size;
+                                cell2 = nextGridX + nextGridY * size;
+                                cell3 = currentGridX + currentGridY * size;
+                                cell4 = nextGridX + currentGridY * size;
+                                gradientFactorX = easeInOutCubic(x / currentSize - Math.floor(x / currentSize));
+                                gradientFactorY = easeInOutCubic(y / currentSize - Math.floor(y / currentSize));
+                                gradientUp = lerp(grid[cell1], grid[cell2], gradientFactorX);
+                                gradientDown = lerp(grid[cell3], grid[cell4], gradientFactorX);
+                                noise += lerp(gradientDown, gradientUp, gradientFactorY) / (2 << (sizeFactor - j - 6));
+                            }
+                            return noise;
+                        },
+                    };
+                };
+                return ({
+                    noiseGenerator: null,
+                    create: function() {
+                        let self = Object.create(this);
+                        self.canvas = document.createElement("canvas");
+                        self.ctx = self.canvas.getContext("2d");
+                        self.update = self.update.bind(self);
+                        pane.callbacks.onNoiseMapReload = self.update;
+                        self.update(pane.params.noiseMapSizeFactor);
+                        return self;
+                    },
+                    update: function(sizeFactor) {
+                        this.noiseGenerator = getNoiseGenerator(sizeFactor);
+                        this.canvas.width = 1 << sizeFactor;
+                        this.canvas.height = 1 << sizeFactor;
+                        const noiseImageData = this.ctx.createImageData(1 << sizeFactor, 1 << sizeFactor);
+                        for (let i = 0; i < (1 << (sizeFactor * 2)); i++) {
+                            const noise = this.noiseGenerator.getNoise((i & ((1 << sizeFactor) - 1)) * 0.1, (i >> sizeFactor) * 0.1);
+                            noiseImageData.data[i * 4] = (noise*255)|0;
+                            noiseImageData.data[i * 4 + 1] = (noise*255)|0;
+                            noiseImageData.data[i * 4 + 2] = (noise*255)|0;
+                            noiseImageData.data[i * 4 + 3] = 255;
+                        }
+                        this.ctx.putImageData(noiseImageData, 0, 0);
+                    },
+                    get: function() { return this.canvas },
+                }).create();
+            });
+
+            const voxelSpaceFactory = (() => {
+                return ({
+                    create: function() {
+                        let self = Object.create(this);
+                        self.heightMap = heightMapFactory();
+                        self.canvas = document.createElement("canvas");
+                        self.ctx = self.canvas.getContext("2d");
+                        return self;
+                    },
+                    render: function(w, h) {
+                        const {cameraX, cameraY, cameraHeight, cameraFOV, cameraFar} = pane.params;
+                        let t = Math.tan(cameraFOV * Math.PI / 360);
+                        let left = 0, right = 0, y = 0;
+                        let dx = 0, height = 0, noise = 0;
+                        let minHeight = Array.apply(null, new Array(w)).map(v => h);
+                        let z = 0, dz = 0, ddz = 0.01;
+                        // TODO use camera yaw, pitch and roll values
+                        while (z < cameraFar) {
+                            z += dz += ddz;
+                            left = -z * t + cameraX; right = z * t + cameraX;
+                            y = -z + cameraY;
+                            dx = (right - left) / w;
+                            let i = 0;
+                            for (i = 0; i < w; i++) {
+                                noise = this.heightMap.noiseGenerator.getNoise(left*10, y*10);
+                                left += dx;
+                                height = ((cameraHeight - noise) * h / z)|0;
+                                if (height > h || height > minHeight[i])
+                                    continue;
+                                ctx.beginPath();
+                                ctx.strokeStyle = `rgba(${(noise * 255) | 0}, ${(noise * 255) | 0}, ${(noise * 255) | 0})`;
+                                ctx.moveTo(i, minHeight[i]);
+                                ctx.lineTo(i,height);
+                                ctx.stroke();
+                                minHeight[i] = height;
+                            }
+                            console.log();
+                        }
+                    },
+                    get: function () { return this.canvas; }
+                }).create();
+            });
+            const voxelSpace = voxelSpaceFactory();
+            return {
+                heightMap: voxelSpace.heightMap,
+                voxelSpace: voxelSpace,
+            };
+        })(pane);
+
+        const f = t => {
+            canvas.width = innerWidth; canvas.height = innerHeight;
+            // let pattern = ctx.createPattern(renderers.heightMap.get(), 'repeat');
+            // ctx.fillStyle = pattern;
+            // ctx.fillRect(0,0,innerWidth, innerHeight);
+
+            renderers.voxelSpace.render(innerWidth, innerHeight);
+            ctx.drawImage(renderers.voxelSpace.get(),0,0);
+            requestAnimationFrame(f);
+        }
+        requestAnimationFrame(f);
+    </script>
+</body>
+</html>
