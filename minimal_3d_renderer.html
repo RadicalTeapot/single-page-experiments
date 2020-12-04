@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal 3D renderer</title>
+</head>
+<body style="margin:0; overflow:hidden">
+   <canvas id="canvas"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@1.5.7/dist/tweakpane.min.js"></script>
+   <script>
+        const pane = (() => {
+            const params = {
+                x: 0,
+                y: 0,
+                z: 5,
+                yaw : 45,
+                pitch: 45,
+                roll: 0,
+            };
+            const pane = new Tweakpane({title: "Settings"});
+            pane.addInput(params, 'x', {step:0.1});
+            pane.addInput(params, 'y', {step:0.1});
+            pane.addInput(params, 'z', {step:0.1});
+            pane.addInput(params, 'yaw', {min: 0, max: 360, step:1});
+            pane.addInput(params, 'pitch', {min: 0, max: 360, step:1});
+            pane.addInput(params, 'roll', {min: 0, max: 360, step:1});
+            return {params};
+        })();
+
+        const cube = {
+            points: [
+                {x:-1, y:-1, z:-1},
+                {x:+1, y:-1, z:-1},
+                {x:+1, y:-1, z:+1},
+                {x:-1, y:-1, z:+1},
+                {x:-1, y:+1, z:-1},
+                {x:+1, y:+1, z:-1},
+                {x:+1, y:+1, z:+1},
+                {x:-1, y:+1, z:+1},
+            ],
+            lines: [
+                [0,1],[1,2],[2,3],[3,0],
+                [4,5],[5,6],[6,7],[7,4],
+                [0,4],[1,5],[2,6],[3,7],
+            ],
+            faces: [
+                [0,1,2,3], [4,5,6,7],
+                [0,4,5,1], [3,7,4,0],
+                [1,5,6,2], [2,6,7,3]
+            ]
+        }
+
+        const renderer = ({
+            create: function(pane) {
+                let self = Object.create(this);
+                self.ctx = canvas.getContext("2d");
+                self.params = pane.params;
+                return self;
+            },
+            render: function(object) {
+                canvas.width = innerWidth; canvas.height = innerHeight;
+                this.ctx.fillRect(0,0,canvas.width,canvas.height);
+
+                const projectedPoints = object.points.map(({x,y,z}) => this.getPointProjection(canvas.width, canvas.height, x, y, z));
+                const projectedLines = object.lines.filter(([first, second]) => projectedPoints[first].z > 0 && projectedPoints[second].z > 0);
+                const projectedFaces = object.faces
+                    .filter(face => !face.some(index=>projectedPoints[index].z <= 0))
+                    .map((face, index) =>
+                        [
+                            ...face,                                                                            // Point indices
+                            face.reduce((sum, current) => sum += projectedPoints[current].z / face.length, 0),  // Distance from face center to cam
+                            index,                                                                              // Face index
+                        ]
+                    )
+                ;
+
+                this.renderFaces(projectedFaces, projectedPoints);
+                this.renderLines(projectedLines, projectedPoints);
+                this.renderPoints(projectedPoints);
+            },
+            renderPoints: function(points) {
+                this.ctx.beginPath();
+                points.filter(point => point.z > 0).forEach(({ x, y, z }) => this.ctx.rect(x - 2, y - 2, 4, 4));
+                this.ctx.fillStyle="green";
+                this.ctx.fill();
+            },
+            renderLines: function(lines, points) {
+                this.ctx.beginPath();
+                this.ctx.strokeStyle="rgba(255,255,255,0.25)";
+                lines.forEach(([first, second]) => {
+                    this.ctx.moveTo(points[first].x, points[first].y);
+                    this.ctx.lineTo(points[second].x, points[second].y);
+                });
+                this.ctx.stroke();
+            },
+            renderFaces: function(faces, points) {
+                faces
+                    .sort((a, b) => b[4] - a[4])        // Furthest first
+                    .forEach((face, index) => {
+                        this.ctx.beginPath();
+                        this.ctx.fillStyle = `hsla(${(360 * face[5] / faces.length)|0}, 100%, 50%, 0.25)`;
+                        this.ctx.moveTo(points[face[0]].x, points[face[0]].y);
+                        this.ctx.lineTo(points[face[1]].x, points[face[1]].y);
+                        this.ctx.lineTo(points[face[2]].x, points[face[2]].y);
+                        this.ctx.lineTo(points[face[3]].x, points[face[3]].y);
+                        this.ctx.fill();
+                    })
+                ;
+            },
+            getPointProjection: function(w, h, x, y, z) {
+                // Apply yaw
+                let p = Math.atan2(x,z) - this.params.yaw * Math.PI / 180;
+                let d = Math.sqrt(x*x+z*z);
+                x = Math.sin(p) * d;
+                z = Math.cos(p) * d;
+                // Apply pitch
+                p = Math.atan2(y,z) - this.params.pitch * Math.PI / 180;
+                d = Math.sqrt(y*y+z*z);
+                y = Math.sin(p) * d;
+                z = Math.cos(p) * d;
+                // Apply roll
+                p = Math.atan2(x,y) - this.params.roll * Math.PI / 180;
+                d = Math.sqrt(x*x+y*y);
+                x = Math.sin(p) * d;
+                y = Math.cos(p) * d;
+                // Apply translation
+                x += this.params.x;
+                y += this.params.y;
+                z += this.params.z;
+
+                w /= 2; h /= 2;
+                return {
+                    x: w + x / z * w,
+                    y: h + y / z * w,
+                    z: z > 0 ? z * z : -1
+                };
+            }
+        }).create(pane);
+
+        f = t => {
+            renderer.render(cube);
+            requestAnimationFrame(f);
+        }
+        requestAnimationFrame(f);
+   </script>
+</body>
+</html>
