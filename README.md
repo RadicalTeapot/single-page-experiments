@@ -98,4 +98,8 @@ VoxelSpace renderer, based on [this article](https://github.com/s-macke/VoxelSpa
 
 #### minimal_3d_renderer
 
-Minimal 3d renderer, base on [this article](https://cantelope.org/tiny_3D/)i
+Minimal 3d renderer, based on [this article](https://cantelope.org/tiny_3D/).
+
+#### car_behavior
+
+Car steering behavior, based on [this article](http://engineeringdotnet.blogspot.com/2010/04/simple-2d-car-physics-in-games.html) and also [this article](http://kidscancode.org/godot_recipes/2d/car_steering/).

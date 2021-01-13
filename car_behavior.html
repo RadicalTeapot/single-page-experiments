@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car behavior</title>
+    <style>*{margin:0px; overflow: hidden;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@latest"></script>
+</head>
+<body>
+   <canvas id="canvas"></canvas>
+   <script>
+       'use strict';
+        // Implementation of algorithm from here: http://kidscancode.org/godot_recipes/2d/car_steering/
+        // and here: http://engineeringdotnet.blogspot.com/2010/04/simple-2d-car-physics-in-games.html
+        const ctx = canvas.getContext("2d");
+
+        const pane = (() => {
+            const params = {
+                maxAcceleration: 10,
+                brakingAcceleration: 15,
+                maxReverseSpeed: 5,
+                wheelBase: 70,
+                steeringAngle: 35,
+                slipSpeed: 15,
+                tractionMin: 0.1,
+                friction: 0.1,
+                drag: 0.02,
+                monitors: {
+                    acceleration: 0,
+                    speed: 0,
+                    friction: 0,
+                    drag: 0,
+                    traction: 0,
+                }
+            };
+
+            const pane = new Tweakpane({ title: "Settings" });
+            let folder = pane.addFolder({title: "Inputs", expanded: true})
+            folder.addInput(params, 'maxAcceleration', {min: 0, max: 30, step: 1});
+            folder.addInput(params, 'brakingAcceleration', {min: 0, max: 50, step: 1});
+            folder.addInput(params, 'maxReverseSpeed', {min: 0, max: 50, step: 1});
+            folder.addInput(params, 'wheelBase', {min: 0, max: 250, step: 10});
+            folder.addInput(params, 'steeringAngle', {min: 0, max: 360, step: 5});
+            folder.addInput(params, 'slipSpeed', {min: 0, max: 30, step: 1});
+            folder.addInput(params, 'tractionMin', {min: 0, max: 1, step: 0.01});
+            folder.addInput(params, 'friction', {min: 0, max: 0.5, step: 0.025});
+            folder.addInput(params, 'drag', {min: 0, max: 0.1, step: 0.01});
+            folder = pane.addFolder({title: "Monitor", expanded: true});
+            folder.addMonitor(params.monitors, 'acceleration');
+            folder.addMonitor(params.monitors, 'speed');
+            folder.addMonitor(params.monitors, 'friction');
+            folder.addMonitor(params.monitors, 'drag');
+            folder.addMonitor(params.monitors, 'traction');
+
+            return params;
+        })();
+
+        const drawBackground = (() => {
+            const cellSize = 200;
+            const clear = "#329351";
+            const dark = "#267c42";
+            return (x, y, w, h) => {
+                ctx.fillStyle = dark;
+                ctx.fillRect(0,0,w,h);
+                ctx.fillStyle=clear;
+                for (let i = -2; i < w / cellSize + 2; i++) {
+                    let j = (i % 2) === 0 ? -2 : -1;
+                    for (;j < h / cellSize + 2; j+=2) {
+                        ctx.rect(i*cellSize - x%(2*cellSize), j*cellSize - y%(2*cellSize), cellSize, cellSize);
+                    }
+                }
+                ctx.fill();
+            };
+        })();
+
+        const player = (() => {
+            const getFriction = (speed, friction) => speed * friction;
+            const getDrag = (speed, drag) => speed * speed * drag;
+            const getTraction = (speed, tractionMin, slipSpeed) => tractionMin + (1 - Math.pow(Math.min(speed, slipSpeed) / slipSpeed, 0.9)) * (1 - tractionMin);
+
+            const player = ({
+                create: function() {
+                    let self = Object.create(this);
+                    self.x = 0; self.y = 0; self.angle = 0;
+                    self.speed = 0; self.accel = 0;
+                    self.sprite = null;
+                    return self;
+                },
+                draw: function() {},
+                update: function() {
+                    // Acceleration
+                    this.accel = 0;
+                    if (keys.up)
+                    {
+                        if (this.speed >= 0)
+                            this.accel += pane.maxAcceleration;
+                        else
+                            this.accel += pane.brakingAcceleration;
+                    }
+                    if (keys.down)
+                    {
+                        if (this.speed <= 0)
+                            this.accel -= pane.maxAcceleration;
+                        else
+                            this.accel -= pane.brakingAcceleration;
+                    }
+
+                    let friction = getFriction(Math.abs(this.speed), pane.friction);
+                    if (Math.abs(this.speed) < 2)
+                        friction *= 3;
+                    let drag = getDrag(Math.abs(this.speed), pane.drag);
+                    this.accel += (friction + drag) * (this.speed > 0 ? -1 : 1);
+
+                    // Speed
+                    this.speed += this.accel * 1/60;
+                    if (this.speed < 0) this.speed = Math.max(this.speed, -pane.maxReverseSpeed);
+                    if (!(keys.up || keys.down) && Math.abs(this.speed) <= 0.25)
+                        this.speed = 0;
+
+                    // Heading
+                    let turn = 0;
+                    if (keys.right) turn += 1;
+                    if (keys.left) turn -= 1;
+                    let traction = getTraction(Math.abs(this.speed), pane.tractionMin, pane.slipSpeed);
+                    let angle = (pane.steeringAngle * Math.PI / 180) * turn * traction;
+                    let front = {x:this.x + pane.wheelBase/2 * Math.sin(this.angle), y:this.y - pane.wheelBase/2 * Math.cos(this.angle)};
+                    let back = {x:this.x - pane.wheelBase/2 * Math.sin(this.angle), y:this.y + pane.wheelBase/2 * Math.cos(this.angle)};
+                    front.x += this.speed * Math.sin(this.angle + angle);
+                    front.y -= this.speed * Math.cos(this.angle + angle);
+                    back.x += this.speed * Math.sin(this.angle);
+                    back.y -= this.speed * Math.cos(this.angle);
+
+                    this.x = (front.x + back.x) / 2;
+                    this.y = (front.y + back.y) / 2;
+                    this.angle = Math.atan2(front.x - back.x, back.y - front.y);
+
+                    // Debug
+                    pane.monitors.acceleration = this.accel;
+                    pane.monitors.speed = this.speed;
+                    pane.monitors.friction = friction;
+                    pane.monitors.drag = drag;
+                    pane.monitors.traction = traction;
+                }
+            }).create();
+
+            const draw = function() {
+                ctx.save();
+                ctx.translate(this.sprite.width * 0.5, this.sprite.height * 0.5);
+                ctx.rotate(this.angle);
+                ctx.drawImage(this.sprite, -this.sprite.width * 0.5, -this.sprite.height * 0.5);
+                ctx.restore();
+            };
+
+            (async (path) => {
+                try {
+                    player.sprite = await new Promise((resolve, reject) => {
+                        let img = new Image();
+                        img.onload = e => resolve(img);
+                        img.onerror = e => reject(e);
+                        img.src = path;
+                    });
+                    player.draw = draw.bind(player);
+                } catch (e) {
+                    console.error(`Error while loading image at ${path}`);
+                }
+            })("assets/car_behavior/car.png");
+
+            return player;
+        })();
+
+        const keys = {up: false, down: false, left: false, right: false}
+        document.onkeydown = e => {
+            switch(e.key){
+                case "ArrowDown": keys.down = true; break;
+                case "ArrowUp": keys.up = true; break;
+                case "ArrowLeft": keys.left = true; break;
+                case "ArrowRight": keys.right = true; break;
+            };
+        };
+        document.onkeyup = e => {
+            switch(e.key){
+                case "ArrowDown": keys.down = false; break;
+                case "ArrowUp": keys.up = false; break;
+                case "ArrowLeft": keys.left = false; break;
+                case "ArrowRight": keys.right = false; break;
+            };
+        };
+
+        const f = t => {
+            const w = innerWidth, h = innerHeight;
+            canvas.width = w; canvas.height = h;
+
+            player.update();
+            drawBackground(player.x, player.y, w, h);
+
+            ctx.translate(w*0.5,h*0.5);
+            player.draw();
+
+            requestAnimationFrame(f);
+        }
+
+        requestAnimationFrame(f);
+   </script>
+</body>
+</html>
