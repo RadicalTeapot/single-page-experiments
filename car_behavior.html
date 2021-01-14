@@ -24,6 +24,7 @@
                 steeringAngle: 35,
                 slipSpeed: 15,
                 tractionMin: 0.1,
+                tractionMax: 0.7,
                 friction: 0.1,
                 drag: 0.02,
                 monitors: {
@@ -44,6 +45,7 @@
             folder.addInput(params, 'steeringAngle', {min: 0, max: 360, step: 5});
             folder.addInput(params, 'slipSpeed', {min: 0, max: 30, step: 1});
             folder.addInput(params, 'tractionMin', {min: 0, max: 1, step: 0.01});
+            folder.addInput(params, 'tractionMax', {min: 0, max: 1, step: 0.01});
             folder.addInput(params, 'friction', {min: 0, max: 0.5, step: 0.025});
             folder.addInput(params, 'drag', {min: 0, max: 0.1, step: 0.01});
             folder = pane.addFolder({title: "Monitor", expanded: true});
@@ -75,73 +77,90 @@
         })();
 
         const player = (() => {
-            const getFriction = (speed, friction) => speed * friction;
-            const getDrag = (speed, drag) => speed * speed * drag;
-            const getTraction = (speed, tractionMin, slipSpeed) => tractionMin + (1 - Math.pow(Math.min(speed, slipSpeed) / slipSpeed, 0.9)) * (1 - tractionMin);
+            const getLength = (x, y) => Math.sqrt(x*x+y*y);
+            const lerp = (a, b, t) => a * (1 - t) + b * t;
 
             const player = ({
                 create: function() {
                     let self = Object.create(this);
-                    self.x = 0; self.y = 0; self.angle = 0;
-                    self.speed = 0; self.accel = 0;
+                    self.x = 0; self.y = 0; self.angle = 0; self.steerAngle = 0;
+                    self.velX = 0; self.velY = 0; self.accelX = 0; self.accelY = 0;
                     self.sprite = null;
                     return self;
                 },
-                draw: function() {},
-                update: function() {
-                    // Acceleration
-                    this.accel = 0;
-                    if (keys.up)
-                    {
-                        if (this.speed >= 0)
-                            this.accel += pane.maxAcceleration;
-                        else
-                            this.accel += pane.brakingAcceleration;
-                    }
-                    if (keys.down)
-                    {
-                        if (this.speed <= 0)
-                            this.accel -= pane.maxAcceleration;
-                        else
-                            this.accel -= pane.brakingAcceleration;
-                    }
-
-                    let friction = getFriction(Math.abs(this.speed), pane.friction);
-                    if (Math.abs(this.speed) < 2)
-                        friction *= 3;
-                    let drag = getDrag(Math.abs(this.speed), pane.drag);
-                    this.accel += (friction + drag) * (this.speed > 0 ? -1 : 1);
-
-                    // Speed
-                    this.speed += this.accel * 1/60;
-                    if (this.speed < 0) this.speed = Math.max(this.speed, -pane.maxReverseSpeed);
-                    if (!(keys.up || keys.down) && Math.abs(this.speed) <= 0.25)
-                        this.speed = 0;
-
-                    // Heading
+                reset: function() {
+                    this.steerAngle = 0;
+                    this.accelX = 0; this.accelY = 0;
+                },
+                getInput: function() {
+                    // Steering
                     let turn = 0;
                     if (keys.right) turn += 1;
                     if (keys.left) turn -= 1;
-                    let traction = getTraction(Math.abs(this.speed), pane.tractionMin, pane.slipSpeed);
-                    let angle = (pane.steeringAngle * Math.PI / 180) * turn * traction;
-                    let front = {x:this.x + pane.wheelBase/2 * Math.sin(this.angle), y:this.y - pane.wheelBase/2 * Math.cos(this.angle)};
-                    let back = {x:this.x - pane.wheelBase/2 * Math.sin(this.angle), y:this.y + pane.wheelBase/2 * Math.cos(this.angle)};
-                    front.x += this.speed * Math.sin(this.angle + angle);
-                    front.y -= this.speed * Math.cos(this.angle + angle);
-                    back.x += this.speed * Math.sin(this.angle);
-                    back.y -= this.speed * Math.cos(this.angle);
+                    this.steerAngle = turn * pane.steeringAngle * Math.PI / 180;
 
-                    this.x = (front.x + back.x) / 2;
-                    this.y = (front.y + back.y) / 2;
-                    this.angle = Math.atan2(front.x - back.x, back.y - front.y);
-
-                    // Debug
-                    pane.monitors.acceleration = this.accel;
-                    pane.monitors.speed = this.speed;
-                    pane.monitors.friction = friction;
-                    pane.monitors.drag = drag;
-                    pane.monitors.traction = traction;
-                }
+                    // Accelerating
+                    if (keys.up) {
+                        this.accelX = Math.sin(this.angle) * pane.maxAcceleration;
+                        this.accelY = Math.cos(this.angle) * pane.maxAcceleration * -1;
+                    }
+                    if (keys.down) {
+                        this.accelX = Math.sin(this.angle) * pane.brakingAcceleration * -1;
+                        this.accelY = Math.cos(this.angle) * pane.brakingAcceleration;
+                    }
+                },
+                applyFriction: function() {
+                    // Stop car at small velocity (less than maxAccel * delta)
+                    let speed = getLength(this.velX, this.velY);
+                    if (speed < 0.1) {this.velX = 0; this.velY = 0; speed = 0};
+                    // Get friction
+                    let friction = {x:this.velX * pane.friction, y:this.velY * pane.friction};
+                    if (speed < 2) {friction.x *= 3; friction.y *= 3};
+                    // Get drag
+                    let drag = {x:this.velX * speed * pane.drag, y:this.velY * speed * pane.drag};
+                    // Add friction and drag to velocity
+                    this.accelX -= friction.x + drag.x; this.accelY -= friction.y + drag.y;
+                },
+                calculateSteering: function() {
+                    const speed = getLength(this.velX, this.velY);
+                    // Get wheels position
+                    let rear = {x: this.x - Math.sin(this.angle) * pane.wheelBase * 0.5, y: this.y + Math.cos(this.angle) * pane.wheelBase * 0.5};
+                    let front = {x: this.x + Math.sin(this.angle) * pane.wheelBase * 0.5, y: this.y - Math.cos(this.angle) * pane.wheelBase * 0.5};
+                    // Update wheels position with (rotated) velocity
+                    rear.x += this.velX; rear.y += this.velY;
+                    front.x += this.velX * Math.cos(this.steerAngle) - this.velY * Math.sin(this.steerAngle);
+                    front.y += this.velX * Math.sin(this.steerAngle) + this.velY * Math.cos(this.steerAngle);
+                    // Get new car direction
+                    let direction = {x: front.x - rear.x, y: front.y - rear.y};
+                    const length = getLength(direction.x, direction.y);
+                    if (length > 0) {direction.x /= length; direction.y /= length;}
+                    // Figure out if we're reversing
+                    let dot = direction.x * this.velX + direction.y * this.velY;
+                    if (speed > 0) dot /= speed;
+                    const reversing = dot < -0.25;
+                    // Update vel and angle to new direction
+                    if (reversing) {
+                        this.velX = -direction.x * Math.min(speed, pane.maxReverseSpeed);
+                        this.velY = -direction.y * Math.min(speed, pane.maxReverseSpeed)
+                    }
+                    else {
+                        // Apply traction
+                        const traction = lerp(pane.tractionMax, pane.tractionMin, Math.min(speed, pane.slipSpeed) / pane.slipSpeed);
+                        this.velX = lerp(this.velX, direction.x * speed, traction);
+                        this.velY = lerp(this.velY, direction.y * speed, traction);
+                    }
+                    this.angle = Math.atan2(direction.x, -direction.y);
+                },
+                update: function(delta) {
+                    this.reset();
+                    this.getInput();
+                    this.applyFriction();
+                    this.calculateSteering();
+                    // Update vel and position
+                    this.velX += this.accelX * delta; this.velY += this.accelY * delta;
+                    this.x += this.velX; this.y += this.velY;
+                },
+                draw: function() {}
             }).create();
 
             const draw = function() {
@@ -191,7 +210,7 @@
             const w = innerWidth, h = innerHeight;
             canvas.width = w; canvas.height = h;
 
-            player.update();
+            player.update(1/60);
             drawBackground(player.x, player.y, w, h);
 
             ctx.translate(w*0.5,h*0.5);
