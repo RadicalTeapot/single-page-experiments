@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car behavior 2</title>
+    <style>
+        * {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        "use strict";
+
+        const Vector = (() => {
+            const vectorObject = {
+                x: 0, y: 0,
+
+                get length2() { return this.x ** 2 + this.y ** 2; },
+                get length() { return Math.sqrt(this.length2); },
+                get angle() { return new Angle(Math.atan2(this.y, this.x)); },
+
+                copy: function (vector) {
+                    this.x = vector.x; this.y = vector.y;
+                    return this;
+                },
+                clone: function () {
+                    return new Vector(this.x, this.y);
+                },
+                rotate: function (angle) {
+                    const { x, y } = this;
+                    const c = Math.cos(angle), s = Math.sin(angle);
+                    this.x = x * c - y * s;
+                    this.y = x * s + y * c;
+                    return this;
+                },
+                normalize: function () {
+                    const l = this.length;
+                    if (Math.abs(l) > 0.0001) {
+                        this.x /= l; this.y /= l;
+                    }
+                    return this;
+                },
+                add: function (vector) {
+                    this.x += vector.x; this.y += vector.y;
+                    return this;
+                },
+                subtract: function (vector) {
+                    this.x -= vector.x; this.y -= vector.y;
+                    return this;
+                },
+                mult: function (value) {
+                    this.x *= value; this.y *= value;
+                    return this;
+                },
+                dot: function (vector) {
+                    return this.x * vector.x + this.y * vector.y;
+                }
+            };
+            return function (x, y) {
+                let self = Object.create(vectorObject);
+                self.x = x; self.y = y;
+                return self;
+            };
+        })();
+
+        const Angle = (() => {
+            const PI2 = Math.PI * 2;
+            const PI = Math.PI;
+            const angleObject = {
+                value: 0,
+                add: function (value) {
+                    this.value += value;
+                    // Remap to 0..2*PI
+                    this.value = this.value < 0 ? (PI2 - (Math.abs(this.value) % PI2)) : (this.value % PI2);
+                    return this;
+                },
+                /// calculates if an angle is closer to a given angle in the positive
+                /// direction rather than the negative
+                /// returns -1, 0 or +1
+                direction: function (value) {
+                    const diff = this.value - value;
+                    if (Math.abs(diff) < 0.0001 || (PI2 - Math.abs(diff) < 0.0001))
+                        return 0;
+                    else if (diff < -PI)
+                        return 1;
+                    else if (diff > PI)
+                        return -1;
+                    else
+                        return (diff > 0 ? 1 : -1);
+                }
+            };
+
+            return function (value) {
+                let self = Object.create(angleObject);
+                // Remap to 0..2*PI
+                self.value = value < 0 ? (PI2 - (Math.abs(value) % PI2)) : (value % PI2);
+                return self;
+            }
+        })();
+
+        const Car = (() => {
+            const ACCEL = 0.5;
+            const TURN_SPEED = 0.05;
+            const FRICTION = 0.01;
+            const BRAKE_FRICTION = 0.05;
+            const DRAG = 0.001;
+            const ALIGNMENT_MIN = 0.001;
+            const ALIGNMENT_MAX = 0.2;
+            const SLIP_SPEED = 10;
+
+            const carObject = {
+                position: null,
+                velocity: null,
+                size: null,
+                color: "red",
+                angle: null,
+
+                update(steering, speed) {
+                    const velLength = this.velocity.length;
+                    // Update angle
+                    this.angle.add(steering * TURN_SPEED * Math.min(velLength * 0.2, 1));
+
+                    // Update acceleration
+                    let accel = new Vector(ACCEL * Math.max(speed, 0), 0).rotate(this.angle.value);
+                    let friction = this.velocity.clone().mult(-1).mult(speed >= 0 ? FRICTION : BRAKE_FRICTION);
+                    if (velLength < 0.1) friction.mult(3);
+                    const drag = this.velocity.clone().mult(-1).mult(velLength).mult(DRAG);
+                    accel.add(friction).add(drag);
+
+                    // Update velocity
+                    this.velocity.add(accel);
+
+                    // Rotate velocity towards angle
+                    let velAngleDir = this.velocity.angle.direction(this.angle.value);
+                    const dot = this.velocity.dot(new Vector(1, 0).rotate(this.angle.value));
+                    velAngleDir *= dot > 0 ? -1 : 1;
+                    const alignment = (1 - Math.pow(Math.min(velLength / SLIP_SPEED, 1), 1)) * (ALIGNMENT_MAX - ALIGNMENT_MIN) + ALIGNMENT_MIN;
+                    this.velocity.rotate(velAngleDir * alignment);
+
+                    // Update position
+                    this.position.add(this.velocity);
+                },
+                draw: function (ctx) {
+                    ctx.save();
+
+                    // Rotate about car center
+                    const halfSize = this.size.clone().mult(0.5);
+                    const rotationCenter = this.position.clone().add(halfSize);
+                    ctx.translate(rotationCenter.x, rotationCenter.y);
+                    ctx.rotate(this.angle.value + Math.PI * 0.5);
+                    halfSize.mult(-1);
+                    ctx.translate(halfSize.x, halfSize.y * 1.5);
+
+                    // Body
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(0, 0, this.size.x, this.size.y);
+
+                    // Headlights
+                    ctx.fillStyle = "#FFA";
+                    ctx.fillRect(1, 1, 10, 5);
+                    ctx.fillRect(this.size.x - 11, 0 + 1, 10, 5);
+
+                    // Windows
+                    ctx.fillStyle = "black";
+                    ctx.fillRect(2, 10, this.size.x - 4, 15);
+                    ctx.fillRect(2, this.size.y - 8, this.size.x - 4, 4);
+
+                    ctx.restore();
+
+                },
+                drawDrift: function(ctx) {
+                    // Car is considered to be drifting when angle between velocity and direction is about 15 deg
+                    const drifting = Math.abs(this.velocity.angle.value - this.angle.value) > Math.PI / 12;
+                    if (drifting) {
+                        ctx.save();
+
+                        const previous = this.position.clone().subtract(this.velocity).add(new Vector(this.size.x*0.5, this.size.y*0.5));
+                        const wheelOffset = 5;
+                        const wheels = [
+                            [this.size.x * 0.5 - wheelOffset, this.size.y * 0.25 - wheelOffset], // Car center is at s.x * 0.5, s.y * 0.25
+                            [this.size.x * 0.5 - wheelOffset, -this.size.y * 0.75 + wheelOffset],
+                            [-this.size.x * 0.5 + wheelOffset, this.size.y * 0.25 - wheelOffset],
+                            [-this.size.x * 0.5 + wheelOffset, -this.size.y * 0.75 + wheelOffset],
+                        ].map(([x, y]) => new Vector(x, y).rotate(this.angle.value + Math.PI * 0.5).add(previous));
+
+                        // Draw drift wheel marks
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = "rgba(0,0,0,.5)";
+                        ctx.beginPath();
+                        wheels.forEach(wheel => {
+                            ctx.moveTo(wheel.x, wheel.y);
+                            ctx.lineTo(wheel.x + this.velocity.x, wheel.y + this.velocity.y);
+                        })
+                        ctx.stroke();
+                    }
+                },
+                drawDebug: function(ctx) {
+                    // Vel
+                    ctx.strokeStyle = "red";
+                    ctx.beginPath();
+                    let p = this.size.clone().mult(0.5).add(this.position);
+                    ctx.moveTo(p.x, p.y);
+                    p.add(this.velocity.clone().normalize().mult(this.velocity.length * 10));
+                    ctx.lineTo(p.x + this.velocity.x, p.y + this.velocity.y);
+                    ctx.stroke();
+
+                    // Direction
+                    ctx.strokeStyle = "green";
+                    ctx.beginPath();
+                    p = this.size.clone().mult(0.5).add(this.position);
+                    ctx.moveTo(p.x, p.y);
+                    p.add(new Vector(75, 0).rotate(this.angle.value));
+                    ctx.lineTo(p.x, p.y);
+                    ctx.stroke();
+
+                    // Angle between vel and direction
+                    ctx.strokeStyle = "red";
+                    ctx.fillStyle="rgba(255,0,0,0.25)";
+                    ctx.beginPath();
+                    p = this.size.clone().mult(0.5).add(this.position);
+                    ctx.moveTo(p.x, p.y);
+                    ctx.arc(p.x, p.y, 50, this.velocity.angle.value, this.angle.value, this.velocity.angle.direction(this.angle.value) > 0);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            };
+
+            return function (x, y, w, h, angle, color) {
+                let self = Object.create(carObject);
+                self.position = new Vector(x, y);
+                self.velocity = new Vector(0, 0);
+                self.size = new Vector(w, h);
+                self.angle = new Angle(angle);
+                self.color = color;
+                return self;
+            }
+        })();
+
+        ({
+            w: 0, h: 0, ctx: null, car: null,
+            keys: { up: false, down: false, left: false, right: false },
+            init: function () {
+                this.driftCanvas = document.createElement("canvas");
+                this.driftCtx = this.driftCanvas.getContext("2d");
+                this.ctx = canvas.getContext("2d");
+                this.resize = this.resize.bind(this);
+                this.render = this.render.bind(this);
+                requestAnimationFrame(t => {
+                    this.connect();
+                    this.resize();
+                    this.car = new Car(this.w / 2, this.h / 2, 33, 50, 0, "red");
+                    this.render(t);
+                });
+            },
+            connect: function () {
+                const codes = { ArrowDown: "down", ArrowUp: "up", ArrowLeft: "left", ArrowRight: "right" };
+                window.onresize = this.resize;
+                document.onkeydown = e => { this.keys[codes[e.key]] = true; };
+                document.onkeyup = e => { this.keys[codes[e.key]] = false; };
+            },
+            resize: function () {
+                this.w = innerWidth; this.h = innerHeight;
+                canvas.width = this.w; canvas.height = this.h;
+                this.driftCanvas.width = this.w; this.driftCanvas.height = this.h;
+            },
+            render: function (t) {
+                const { ctx, driftCtx, w, h, car } = this;
+
+                // Handle input and update car
+                let steering = 0;
+                if (this.keys.left) steering -= 1;
+                if (this.keys.right) steering += 1;
+                let speed = 0;
+                if (this.keys.up) speed += 1;
+                if (this.keys.down) speed -= 1;
+                car.update(steering, speed);
+
+                // Background
+                ctx.fillStyle = "gray";
+                ctx.fillRect(0, 0, w, h);
+
+                // Draw methods
+                ctx.drawImage(this.driftCanvas, 0, 0);
+                car.draw(ctx);
+                car.drawDrift(driftCtx);
+                //car.drawDebug(ctx);
+
+                requestAnimationFrame(this.render);
+            },
+        }).init();
+    </script>
+</body>
+
+</html>
