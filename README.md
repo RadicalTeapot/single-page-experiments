@@ -107,3 +107,7 @@ Car steering behavior, based on [this article](http://engineeringdotnet.blogspot
 #### car_behavior_2
 
 Car steering behavior, based on [this article](https://github.com/nesbox/TIC-80/wiki/Driving-Model) with some changes to improve behavior taken from the previous car behavior code.
+
+#### triangle_math
+
+Playground for triangle related geometry implementations.

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test triangle angles</title>
+    <style>*{margin: 0; overflow: hidden;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@latest"></script>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        'use strict';
+        const pane = ({
+            drawBisectors: true,
+            create: function() {
+                let self = Object.create(this);
+                self.pane = new Tweakpane({title: 'Settings', expanded: false});
+                const bounds = { x: { min: 0, max: 1 }, y: { min: 0, max: 1 }};
+                self.pane.addInput(self, 'drawBisectors', {label: 'Draw bisectors'});
+                return self;
+            }
+        });
+
+        ({
+            w: 0, h: 0,
+            a: {x:0.33, y:0.5},
+            b: {x:0.66, y:0.33},
+            c: {x:0.66, y:0.66},
+            draggedPoint: null,
+            handleRadius: 10,
+            init: function() {
+                this.ctx = canvas.getContext("2d");
+                this.pane = pane.create();
+                this.resize = this.resize.bind(this);
+                this.render = this.render.bind(this);
+                this.connectEvents();
+                requestAnimationFrame(() => {
+                    this.resize();
+                    this.render();
+                });
+            },
+            connectEvents() {
+                window.onresize = this.resize;
+                canvas.onmousedown = e => {
+                    const {offsetX, offsetY} = e;
+                    ['a', 'b', 'c'].forEach(point => {
+                        const d = (this[point].x * this.w - offsetX)**2 + (this[point].y * this.h - offsetY)**2;
+                        if (d < this.handleRadius * this.handleRadius)
+                            this.draggedPoint = point;
+                    });
+                };
+                canvas.onmouseup = e => {
+                    this.draggedPoint = null;
+                };
+                canvas.onmousemove = e => {
+                    const {offsetX, offsetY} = e;
+                    if (this.draggedPoint !== null)
+                        this[this.draggedPoint] = {x: offsetX / this.w, y: offsetY / this.h};
+                };
+            },
+            resize: function() {
+                this.w = innerWidth; this.h = innerHeight;
+                canvas.width = innerWidth; canvas.height = innerHeight;
+            },
+            render: function(t) {
+                const {w, h, ctx, a, b, c} = this;
+                const {drawBisectors} = this.pane;
+                ctx.fillRect(0, 0, w, h);
+
+                // Triangle
+                ctx.strokeStyle = 'white';
+                ctx.beginPath();
+                ctx.moveTo(a.x * w, a.y * h);
+                ctx.lineTo(b.x * w, b.y * h);
+                ctx.lineTo(c.x * w, c.y * h);
+                ctx.lineTo(a.x * w, a.y * h);
+                ctx.stroke();
+
+                // Handles
+                ctx.beginPath();
+                ctx.moveTo(a.x*w + this.handleRadius, a.y*h);
+                ctx.arc(a.x*w, a.y*h, this.handleRadius, 0, Math.PI*2);
+                ctx.moveTo(b.x*w + this.handleRadius, b.y*h);
+                ctx.arc(b.x*w, b.y*h, this.handleRadius, 0, Math.PI*2);
+                ctx.moveTo(c.x*w + this.handleRadius, c.y*h);
+                ctx.arc(c.x*w, c.y*h, this.handleRadius, 0, Math.PI*2);
+                ctx.stroke();
+
+                // Bisectors
+                ctx.strokeStyle = 'red';
+                const ab = {x: (b.x - a.x) * w, y: (b.y - a.y) * h};
+                const abL = Math.sqrt(ab.x**2 + ab.y**2);
+                const bc = {x: (c.x - b.x) * w, y: (c.y - b.y) * h};
+                const bcL = Math.sqrt(bc.x**2 + bc.y**2);
+                const ca = {x: (a.x - c.x) * w, y: (a.y - c.y) * h};
+                const caL = Math.sqrt(ca.x**2 + ca.y**2);
+                if (drawBisectors) {
+                    ctx.beginPath();
+                    // a
+                    let from = Math.atan2(ab.y, ab.x);
+                    let to = Math.atan2(-ca.y, -ca.x);
+                    const aAngle = (to - from);
+                    from = Math.atan2(bc.y, bc.x);
+                    to = Math.atan2(-ab.y, -ab.x);
+                    const bAngle = (to - from);
+                    from = Math.atan2(ca.y, ca.x);
+                    to = Math.atan2(-bc.y, -bc.x);
+                    const cAngle = (to - from);
+
+                    // a
+                    let l = abL * Math.sin(bAngle) / Math.sin(Math.PI - bAngle - aAngle * 0.5); // Law of sines to find bisector length
+                    ctx.moveTo(a.x * w, a.y * h);
+                    ctx.lineTo(
+                        a.x * w + Math.cos(aAngle * 0.5) * l * ab.x / abL - Math.sin(aAngle * 0.5) * l * ab.y / abL,
+                        a.y * h + Math.sin(aAngle * 0.5) * l * ab.x / abL + Math.cos(aAngle * 0.5) * l * ab.y / abL
+                    );
+                    // b
+                    l = bcL * Math.sin(cAngle) / Math.sin(Math.PI - cAngle - bAngle * 0.5);
+                    ctx.moveTo(b.x * w, b.y * h);
+                    ctx.lineTo(
+                        b.x * w + Math.cos(bAngle * 0.5) * l * bc.x / bcL - Math.sin(bAngle * 0.5) * l * bc.y / bcL,
+                        b.y * h + Math.sin(bAngle * 0.5) * l * bc.x / bcL + Math.cos(bAngle * 0.5) * l * bc.y / bcL
+                    );
+                    // c
+                    l = caL * Math.sin(aAngle) / Math.sin(Math.PI - aAngle - cAngle * 0.5);
+                    ctx.moveTo(c.x * w, c.y * h);
+                    ctx.lineTo(
+                        c.x * w + Math.cos(cAngle * 0.5) * l * ca.x / caL - Math.sin(cAngle * 0.5) * l * ca.y / caL,
+                        c.y * h + Math.sin(cAngle * 0.5) * l * ca.x / caL + Math.cos(cAngle * 0.5) * l * ca.y / caL
+                    );
+                    ctx.stroke();
+                }
+
+                requestAnimationFrame(this.render);
+            }
+        }).init();
+    </script>
+</body>
+</html>
