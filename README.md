@@ -111,3 +111,11 @@ Car steering behavior, based on [this article](https://github.com/nesbox/TIC-80/
 #### triangle_math
 
 Playground for triangle related geometry implementations.
+
+#### test_image_scaling
+
+Test canvas image scaling.
+
+#### test_map_generation
+
+Test terrain generation using PRNG.

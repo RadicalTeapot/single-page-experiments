@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>*{margin:0;overflow:hidden}</style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        'use strict';
+        const ctx = canvas.getContext("2d");
+
+        const offscreenCanvas = document.createElement("canvas");
+        offscreenCanvas.width = 10; offscreenCanvas.height = 10;
+        const offscreenCtx = offscreenCanvas.getContext("2d");
+        offscreenCtx.fillStyle = "black";
+        for (let i = 0; i < 25; i++)
+        {
+            if (Math.random() > 0.5) {
+                let x = i % 5, y = (i / 5) | 0;
+                offscreenCtx.rect(x * 2, y * 2, 2, 2);
+            }
+        }
+        offscreenCtx.fill();
+
+        const f = t => {
+            const w = innerWidth, h = innerHeight;
+            canvas.width = w; canvas.height = h;
+            ctx.drawImage(offscreenCanvas, 0, 0, w, h);
+            requestAnimationFrame(f);
+        };
+        requestAnimationFrame(f);
+    </script>
+</body>
+</html>
