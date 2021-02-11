@@ -1,11 +1,11 @@
 <body style="margin:0">
 <canvas id="canvas"></canvas>
 <script>
-ctx = canvas.getContext`2d`, state = 0, p = [], roadSegments = [], baseSeed=seed=-270979847,feature=0
+ctx = canvas.getContext`2d`, state = 0, p = [], roadSegments = [], baseSeed=seed=270979847,feature=0
 
 const Util = {
     lerp: (x, y, t) => x * (1 - t) + y * t,
-    rand: (f, t) => Util.LCG() * (t - f) + f,
+    rand: (f, t) => Util.mulberry32() * (t - f) + f,
     splitSeg: (p1, p2, t) => [Util.lerp(p1[0], p2[0], t), Util.lerp(p1[1], p2[1], t)],
     movePt: (p1, p2, t) => [p2[0] + (p2[1] - p1[1]) * t, p2[1] + (p1[0] - p2[0]) * t],
     wedge: (p1, p2) => p1[0] * p2[1] - p1[1] * p2[0],
@@ -24,7 +24,12 @@ const Util = {
     adot: (v1, v2) => Math.abs(v1[0] * v2[0] + v1[1] * v2[1]),
     center: (p1, p2) => [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5],
     // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
-    LCG: ()=>((seed=Math.imul(741103597,seed))>>>0)/2**32
+    mulberry32: () => {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / (0xFFFFFFFF + 1);
+    },
 }
 
 const RoadGenerator = {
@@ -127,7 +132,6 @@ const RoadGenerator = {
     run: ()=>{
         console.log(`seed ${baseSeed}`);
         seed = baseSeed;
-        Util.LCG(); Util.LCG(); Util.LCG();
         if (feature >= 0) RoadGenerator.init();
         if (feature >= 1) RoadGenerator.split();
         if (feature >= 2) RoadGenerator.smooth();
