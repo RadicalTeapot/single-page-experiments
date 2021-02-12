@@ -1,217 +1,307 @@
-<body style="margin:0">
-<canvas id="canvas"></canvas>
-<script>
-ctx = canvas.getContext`2d`, state = 0, p = [], roadSegments = [], baseSeed=seed=270979847,feature=0
+<!DOCTYPE html>
+<html lang="en">
 
-const Util = {
-    lerp: (x, y, t) => x * (1 - t) + y * t,
-    rand: (f, t) => Util.mulberry32() * (t - f) + f,
-    splitSeg: (p1, p2, t) => [Util.lerp(p1[0], p2[0], t), Util.lerp(p1[1], p2[1], t)],
-    movePt: (p1, p2, t) => [p2[0] + (p2[1] - p1[1]) * t, p2[1] + (p1[0] - p2[0]) * t],
-    wedge: (p1, p2) => p1[0] * p2[1] - p1[1] * p2[0],
-    intersect: (p1, p2, p3, p4) => {
-        r = [p3[0] - p1[0], p3[1] - p1[1]]
-        s = [p2[0] - p1[0], p2[1] - p1[1]]
-        t = [p4[0] - p3[0], p4[1] - p3[1]]
-        wst = Util.wedge(s, t)
-        if (Math.abs(wst) < Number.EPSILON) return
-        u = Util.wedge(r, t) / wst
-        if (u <= 0 || u >= 1) return
-        v = Util.wedge(r, s) / wst
-        if (v > 0 && v < 1) return [p1[0] + u * s[0], p1[1] + u * s[1]]
-    },
-    norm: (v) => [v[0] / Math.sqrt(v[0] * v[0] + v[1] * v[1]), v[1] / Math.sqrt(v[0] * v[0] + v[1] * v[1])],
-    adot: (v1, v2) => Math.abs(v1[0] * v2[0] + v1[1] * v2[1]),
-    center: (p1, p2) => [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5],
-    // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
-    mulberry32: () => {
-        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-        return ((t ^ t >>> 14) >>> 0) / (0xFFFFFFFF + 1);
-    },
-}
-
-const RoadGenerator = {
-    init: () => {
-        // Test data
-        //p=[[0,0],[100,100],[100,0],[0,100]]
-        //p=[[0,0],[100,100],[150,50],[100,0],[0,100]]
-        //p=[[0,0],[100,50],[0,100],[50,100],[50,0]]
-        //p=[[0,0],[100,100],[200,0],[300,50],[200,100],[100,0],[0,100]]
-
-        // Seeds of broken roads (e.g -270979847) needs to be used with same window resolution!
-
-        // Initial points
-        p = [0, 1, 2].map(v => [Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)])
-        // Split each segment and move each new point
-        for (i = 0; i < 3; i++) {
-            tmp = p.slice()
-            tmp.forEach((v, i) => p.splice(i * 2 + 1, 0, Util.movePt(tmp[i], Util.splitSeg(tmp[i], tmp[(i + 1) % tmp.length], Util.rand(0.25, 0.75)), Util.rand(-0.4, 0.4))))
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track generator</title>
+    <style>
+        body {
+            margin: 0px;
+            overflow: hidden;
         }
-    },
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@latest"></script>
+</head>
 
-    split: () => {
-        // TODO this probably could be trimmed down by skipping segments and just using
-        // an object to track where to insert the intersection points (e.g {pos:[x,y], id1:currentPointIndex, id2:compPointIndex})
-        // this would also give loops for "free" since a loop is all the indices between the
-        // new inserted point (so [currentPointIndex+2...compPointIndex])
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        "use strict";
+        let seed = 270979847;
 
-        // Convert points into segments
-        seg = null, currentSeg = null, previousSeg = null
-        p.forEach((v, i) => {
-            currentSeg = { index: i };
-            previousSeg ? previousSeg.next = currentSeg : null;
-            previousSeg = currentSeg;
-            seg ? null : seg = currentSeg;
-        });
-        // Intersect segments
-        current = seg
-        while (current) {
-            comp = seg
-            while (comp) {
-                if (current.next && comp.next && comp.index !== current.index) {
-                    result = Util.intersect(p[current.index], p[current.next.index], p[comp.index], p[comp.next.index]);
-                    if (result) {
-                        p.push(result);
-                        newSeg = { index: p.length - 1, next: current.next, id: p.length - 1 };
-                        current.next.previous = newSeg; current.next = newSeg;
-                        newSeg = { index: p.length - 1, next: comp.next, id: p.length };
-                        comp.next.previous = newSeg; comp.next = newSeg;
-                    }
+        const Pane = (() => {
+            const params = {
+                seed: 270979847,
+                feature: 3,
+            };
+
+            return function(onChangeCallback) {
+                let self = Object.create(params);
+                const pane = new Tweakpane();
+                pane.addInput(self, 'seed', {step: 1});
+                pane.addInput(self, 'feature', {options:{base: 0, split: 1, smooth: 2, cleanup: 3}});
+
+                pane.on('change', _ => onChangeCallback());
+                return self;
+            }
+        })();
+
+        const Util = {
+            lerp: (x, y, t) => x * (1 - t) + y * t,
+            rand: (f, t) => Util.mulberry32() * (t - f) + f,
+            splitSeg: (p1, p2, t) => [Util.lerp(p1[0], p2[0], t), Util.lerp(p1[1], p2[1], t)],
+            movePt: (p1, p2, t) => [p2[0] + (p2[1] - p1[1]) * t, p2[1] + (p1[0] - p2[0]) * t],
+            wedge: (p1, p2) => p1[0] * p2[1] - p1[1] * p2[0],
+            intersect: (p1, p2, p3, p4) => {
+                let r = [], s = [], t = [], wst = 0, u = 0, v = 0;
+                r = [p3[0] - p1[0], p3[1] - p1[1]]
+                s = [p2[0] - p1[0], p2[1] - p1[1]]
+                t = [p4[0] - p3[0], p4[1] - p3[1]]
+                wst = Util.wedge(s, t)
+                if (Math.abs(wst) < Number.EPSILON) return
+                u = Util.wedge(r, t) / wst
+                if (u <= 0 || u >= 1) return
+                v = Util.wedge(r, s) / wst
+                if (v > 0 && v < 1) return [p1[0] + u * s[0], p1[1] + u * s[1]]
+            },
+            norm: (v) => [v[0] / Math.sqrt(v[0] * v[0] + v[1] * v[1]), v[1] / Math.sqrt(v[0] * v[0] + v[1] * v[1])],
+            adot: (v1, v2) => Math.abs(v1[0] * v2[0] + v1[1] * v2[1]),
+            center: (p1, p2) => [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5],
+            // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
+            mulberry32: () => {
+                seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+                let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                return ((t ^ t >>> 14) >>> 0) / (0xFFFFFFFF + 1);
+            },
+        }
+
+        const RoadGenerator = ({
+            points: [], roadSegments: [],
+
+            create: function() {
+                let self = Object.create(this);
+                self.run = self.run.bind(self);
+                self.pane = new Pane(self.run);
+                self.run();
+                return self;
+            },
+
+            init: function() {
+                // Initial points
+                this.points = [0, 1, 2].map(_ => [Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)]);
+
+                // Split each segment and move each new point
+                for (let i = 0; i < 3; i++) {
+                    let tmp = this.points.slice();
+                    tmp.forEach((_, i) =>
+                        this.points.splice(
+                            i * 2 + 1, 0,
+                            Util.movePt(tmp[i], Util.splitSeg(tmp[i], tmp[(i + 1) % tmp.length], Util.rand(0.25, 0.75)), Util.rand(-0.4, 0.4))
+                        )
+                    );
                 }
-                comp = comp.next;
+            },
+
+            split: function(){
+                // TODO this probably could be trimmed down by skipping segments and just using
+                // an object to track where to insert the intersection points (e.g {pos:[x,y], id1:currentPointIndex, id2:compPointIndex})
+                // this would also give loops for "free" since a loop is all the indices between the
+                // new inserted point (so [currentPointIndex+2...compPointIndex])
+
+                let start = null, current = null, previous = null, intersectionPoint = null, newSeg = null;
+                let  loops = [], visited = [], stack = [], tmp = [];
+
+                // Convert points into segments
+                this.points.forEach((_, i) => {
+                    current = { index: i };
+                    previous ? previous.next = current : null;
+                    previous = current;
+                    start ? null : start = current;
+                });
+
+                // Intersect segments
+                current = start;
+                while (current) {
+                    let comp = start;
+                    while (comp) {
+                        if (current.next && comp.next && comp.index !== current.index) {
+                            intersectionPoint = Util.intersect(
+                                this.points[current.index], this.points[current.next.index],
+                                this.points[comp.index], this.points[comp.next.index]
+                            );
+                            if (intersectionPoint) {
+                                this.points.push(intersectionPoint);
+                                newSeg = { index: this.points.length - 1, next: current.next, id: this.points.length - 1 };
+                                current.next.previous = newSeg; current.next = newSeg;
+                                newSeg = { index: this.points.length - 1, next: comp.next, id: this.points.length };
+                                comp.next.previous = newSeg; comp.next = newSeg;
+                            }
+                        }
+                        comp = comp.next;
+                    }
+                    current = current.next;
+                }
+
+                // Rebuild p and detect loops
+                tmp = this.points.slice();
+                this.points = [];
+                current = start;
+                while (current) {
+                    this.points.push(tmp[current.index]);
+                    if (visited[current.index]) {
+                        loops.push(stack.slice(stack.findIndex(point => point[0] === current.index) + 1).map(point => point[1]))
+                    }
+                    else {
+                        visited[current.index] = true;
+                    }
+                    stack.push([current.index, this.points.length - 1]);
+                    current = current.next;
+                }
+
+                // Reverse order in loops
+                loops.forEach(loop => {
+                    tmp = this.points.slice()
+                    loop.forEach((pointIndex, i) => this.points[pointIndex] = tmp[loop[loop.length - i - 1]])
+                })
+            },
+
+            smooth: function() {
+                const smoothIterations = 20;
+                for (let i = 0; i < smoothIterations; i++)
+                    this.points = this.points.map((point, i) => [
+                        point[0] * 0.95 + (this.points[i ? i - 1 : this.points.length - 1][0] + this.points[(i + 1) % this.points.length][0]) * 0.5 * 0.05,
+                        point[1] * 0.95 + (this.points[i ? i - 1 : this.points.length - 1][1] + this.points[(i + 1) % this.points.length][1]) * 0.5 * 0.05
+                    ]);
+            },
+
+            cleanup: function() {
+                let previous = 0, next = 0, segNext = 0;
+
+                // TODO : Remove points that are really close to other points
+                this.points.forEach((point, i) => {
+                    previous = i ? i - 1 : this.points.length - 1;
+                    next = (i + 1) % this.points.length;
+                    // 0 -> parallel, 1 -> perpendicular
+                    this.points[i][2] = 1 - Util.adot(
+                        Util.norm([this.points[previous][0] - point[0], this.points[previous][1] - point[1]]),
+                        Util.norm([this.points[next][0] - point[0], this.points[next][1] - point[1]])
+                    );
+                });
+
+                // Build curves
+                const curveThreshold = 0.005;
+                this.roadSegments = [];
+                this.points.forEach((point, i) => {
+                    next = (i + 1) % this.points.length;
+                    segNext = (i + 2) % this.points.length;
+                    this.points[next][2] > curveThreshold ?
+                        this.roadSegments.push([
+                            this.points[next][2] * 5,
+                            Util.center(point, this.points[next]),
+                            this.points[next],
+                            Util.center(this.points[next], this.points[segNext])
+                        ]) :
+                        this.roadSegments.push([
+                            this.points[next][2] * 5,
+                            Util.center(point, this.points[next]),
+                            Util.center(this.points[next], this.points[segNext])
+                        ]);
+                });
+            },
+
+            run: function() {
+                seed = this.pane.seed;
+                if (this.pane.feature >= 0) this.init();
+                if (this.pane.feature >= 1) this.split();
+                if (this.pane.feature >= 2) this.smooth();
+                if (this.pane.feature >= 3) this.cleanup();
             }
-            current = current.next;
-        }
-        // Rebuild p and detect loops
-        tmp = p.slice();
-        p = []; loops = []; visited = []; stack = []; current = seg;
-        while (current) {
-            p.push(tmp[current.index]);
-            if (visited[current.index]) {
-                loops.push(stack.slice(stack.findIndex(v => v[0] === current.index) + 1).map(v => v[1]))
+        }).create();
+
+        ({
+            w: 0, h: 0, ctx: null,
+            zoom: 1, cameraPos: [0, 0],
+            init: function () {
+                this.ctx = canvas.getContext("2d");
+                this.resize = this.resize.bind(this);
+                this.render = this.render.bind(this);
+                requestAnimationFrame(t => {
+                    this.connect();
+                    this.resize();
+                    this.render(t);
+                });
+            },
+            resize: function() {
+                this.w = innerWidth; this.h = innerHeight;
+                canvas.width = this.w; canvas.height = this.h;
+            },
+            connect: function() {
+                window.onresize = this.resize;
+
+                // TODO further cleanup (extract some parameters to class or make a camera class)
+                let lastPoint = null;
+                let mousedown = false;
+                let zoomSpeed = 0.1;
+                let zoomFactor = 0;
+                canvas.onmousedown = e => {
+                    mousedown = true;
+                    lastPoint = [e.pageX, e.pageY];
+                }
+                canvas.onmouseup = e => mousedown = false;
+                canvas.onmousemove = e => {
+                    if (!mousedown) return;
+                    let x = e.pageX, y = e.pageY;
+                    this.cameraPos[0] += (x - lastPoint[0]) / this.zoom;
+                    this.cameraPos[1] += (y - lastPoint[1]) / this.zoom;
+                    lastPoint = [x, y]
+                }
+                canvas.onwheel = e => {
+                    zoomFactor += e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
+                    this.zoom = Math.pow(Math.E, -2 * zoomFactor);
+                };
+                canvas.ondblclick = e => {
+                    zoomFactor = 0;
+                    this.zoom = Math.pow(Math.E, -2 * zoomFactor);
+                    this.cameraPos = [0, 0];
+                }
+            },
+            render: function(t) {
+                const {ctx, w, h} = this;
+                const {points, roadSegments} = RoadGenerator;
+                const {feature} = RoadGenerator.pane;
+
+                // Black background
+                ctx.fillStyle = "black";
+                ctx.fillRect(0, 0, w, h);
+
+                // Shift road to center
+                let center = points.reduce((acc, point) => { acc[0] += point[0] / points.length; acc[1] += point[1] / points.length; return acc; }, [0, 0]);
+                ctx.setTransform(
+                    this.zoom, 0,
+                    0, this.zoom,
+                    w * 0.5 + (this.cameraPos[0] - center[0]) * this.zoom,
+                    h * 0.5 + (this.cameraPos[1] - center[1]) * this.zoom
+                );
+
+                // Render road
+                ctx.lineWidth = 2 / this.zoom;
+
+                if (feature < 3)
+                    points.forEach((point, i) => {
+                        ctx.strokeStyle = ctx.fillStyle = `hsl(${i * 20},100%,50%)`;
+                        ctx.fillRect(point[0] - 3 / this.zoom, point[1] - 3 / this.zoom, 6 / this.zoom, 6 / this.zoom);
+                        ctx.beginPath();
+                        ctx.moveTo(point[0], point[1]);
+                        ctx.lineTo(points[(i + 1) % points.length][0], points[(i + 1) % points.length][1]);
+                        ctx.stroke();
+                    });
+                else
+                    roadSegments.forEach(seg => {
+                        ctx.beginPath()
+                        ctx.strokeStyle = `hsl(0,100%,${100 - Math.min(seg[0], 1) * 50}%)`;
+                        ctx.moveTo(seg[1][0], seg[1][1]);
+                        seg.length == 3 ?
+                            ctx.lineTo(seg[2][0], seg[2][1]) :
+                            ctx.quadraticCurveTo(seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
+                        ctx.stroke();
+                    });
+
+                requestAnimationFrame(this.render);
             }
-            else {
-                visited[current.index] = true;
-            }
-            stack.push([current.index, p.length - 1]);
-            current = current.next;
-        }
-        // Reverse order in loops
-        loops.forEach(loop => {
-            tmp = p.slice()
-            loop.forEach((v, i) => p[v] = tmp[loop[loop.length - i - 1]])
-        })
-    },
-
-    smooth: () => {
-        const smoothIterations = 20;
-        for (i = 0; i < smoothIterations; i++)
-            p = p.map((v, i) => [v[0] * 0.95 + (p[i ? i - 1 : p.length - 1][0] + p[(i + 1) % p.length][0]) * 0.5 * 0.05, v[1] * 0.95 + (p[i ? i - 1 : p.length - 1][1] + p[(i + 1) % p.length][1]) * 0.5 * 0.05]);
-    },
-
-    cleanup: () => {
-        // TODO : Remove points that are really close to other points
-        p.forEach((v, i) => {
-            previous = i ? i-1 : p.length-1; next = (i+1) % p.length;
-            // 0 -> parallel, 1 -> perpendicular
-            p[i][2] = 1 - Util.adot(Util.norm([p[previous][0] - v[0], p[previous][1] - v[1]]), Util.norm([p[next][0] - v[0], p[next][1] - v[1]]));
-        });
-        // Build curves
-        const curveThreshold = 0.005;
-        roadSegments = [];
-        p.forEach((v,i)=>{
-            next = (i + 1) % p.length; secNext = (i + 2) % p.length;
-            p[next][2] > curveThreshold ?
-                roadSegments.push([p[next][2]*5, Util.center(v, p[next]), p[next], Util.center(p[next], p[secNext])]) :
-                roadSegments.push([p[next][2]*5, Util.center(v,p[next]), Util.center(p[next], p[secNext])]) ;
-        });
-    },
-
-    run: ()=>{
-        console.log(`seed ${baseSeed}`);
-        seed = baseSeed;
-        if (feature >= 0) RoadGenerator.init();
-        if (feature >= 1) RoadGenerator.split();
-        if (feature >= 2) RoadGenerator.smooth();
-        if (feature >= 3) RoadGenerator.cleanup();
-    }
-}
-
-render = () => {
-    canvas.width = innerWidth; canvas.height = innerHeight;
-
-    // Black background
-    ctx.fillStyle = 0;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Shift road to center
-    center = p.reduce((t, c) => { t[0] += c[0] / p.length; t[1] += c[1] / p.length; return t; }, [0, 0]);
-    ctx.setTransform(zoom, 0, 0, zoom, innerWidth * 0.5 + (cameraPos[0] - center[0]) * zoom, innerHeight * 0.5 + (cameraPos[1] - center[1]) * zoom);
-    // Render road
-    ctx.lineWidth = 2 / zoom;
-
-    if (feature < 3)
-        p.forEach((v,i)=>{
-            ctx.strokeStyle=ctx.fillStyle=`hsl(${i*20},100%,50%)`;
-            ctx.fillRect(v[0]-3/zoom, v[1]-3/zoom, 6/zoom, 6/zoom);
-            ctx.beginPath();
-            ctx.moveTo(v[0], v[1]);
-            ctx.lineTo(p[(i + 1) % p.length][0], p[(i + 1) % p.length][1]);
-            ctx.stroke();
-        });
-    else
-        roadSegments.forEach(seg => {
-            ctx.beginPath()
-            ctx.strokeStyle=`hsl(0,100%,${100-Math.min(seg[0],1)*50}%)`;
-            ctx.moveTo(seg[1][0], seg[1][1]);
-            seg.length == 3 ?
-                ctx.lineTo(seg[2][0], seg[2][1]) :
-                ctx.quadraticCurveTo(seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
-            ctx.stroke();
-        });
-
-    requestAnimationFrame(render);
-}
-
-lastPoint = null;
-cameraPos = [0,0];
-mousedown=false;
-zoomSpeed=0.1;
-zoomFactor=0;
-zoom=1;
-canvas.onmousedown = e => {
-    mousedown=true;
-    lastPoint=[e.pageX, e.pageY];
-}
-canvas.onmouseup = e => mousedown=false;
-canvas.onmousemove = e => {
-    if (!mousedown) return;
-    x=e.pageX; y=e.pageY;
-    cameraPos[0] += (x - lastPoint[0]) / zoom; cameraPos[1] += (y - lastPoint[1]) / zoom;
-    lastPoint = [x, y]
-}
-canvas.onwheel = e => {
-    zoomFactor += e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
-    zoom = Math.pow(Math.E, -2*zoomFactor);
-};
-canvas.ondblclick = e => {
-    zoomFactor = 0;
-    zoom = Math.pow(Math.E, -2*zoomFactor);
-    cameraPos=[0,0];
-}
-
-onkeydown = e => {
-    switch ((e.which || e.keyCode)) {
-        case 37: baseSeed -= 2; break; // Left arrow
-        case 38: feature = Math.min(feature+1, 3); break; // Up arrow
-        case 39: baseSeed += 2; break; // Right arrow
-        case 40: feature = Math.max(feature-1, 0); break; // Up arrow
-    }
-    RoadGenerator.run();
-};
-// Start the loop
-requestAnimationFrame(() => { RoadGenerator.run(); render(); });
-</script>
+        }).init();
+    </script>
 </body>
+</html>
