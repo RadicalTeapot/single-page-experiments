@@ -19,12 +19,12 @@
     <canvas id="canvas"></canvas>
     <script>
         "use strict";
-        let seed = 270979847;
+        let seed = 270979890;
 
         const Pane = (() => {
             const params = {
-                seed: 270979847,
-                feature: 3,
+                seed: 270979890,
+                feature: 2,
             };
 
             return function(onChangeCallback) {
@@ -38,12 +38,117 @@
             }
         })();
 
+        const Point = (() => {
+            const pointObject = {
+                x: 0, y: 0,
+
+                get length() {
+                    return Math.sqrt(this.x * this.x + this.y * this.y);
+                },
+
+                clone: function() {
+                    return new Point(this.x, this.y);
+                },
+                // Replaces Util.norm
+                normalize: function() {
+                    let l = this.length;
+                    if (l > Number.EPSILON)
+                    {
+                        this.x /= l;
+                        this.y /= l;
+                    }
+                    return this;
+                },
+                subtract: function(otherPoint) {
+                    this.x -= otherPoint.x;
+                    this.y -= otherPoint.y;
+                    return this;
+                },
+                add: function(otherPoint) {
+                    this.x += otherPoint.x;
+                    this.y += otherPoint.y;
+                    return this;
+                },
+                mult: function(value) {
+                    this.x *= value;
+                    this.y *= value;
+                    return this;
+                },
+                // Replaces Util.adot
+                absDot: function(otherPoint) {
+                    return this.x * otherPoint.x + this.y * otherPoint.y;
+                },
+                // Replaces Util.wedge
+                wedge: function(otherPoint) {
+                    return this.x * otherPoint.y - this.y * otherPoint.x;
+                },
+            };
+
+            return function(x, y) {
+                let self = Object.create(pointObject);
+                self.x = x; self.y = y;
+                return self;
+            }
+        })();
+
+        const Segment = (() => {
+            const segmentObject = {
+                firstPoint: null, secondPoint: null,
+
+                get vector() { return this.secondPoint.clone().subtract(this.firstPoint) },
+
+                // Replaces Util.splitSeg
+                getPointAtPosition: function(position) {
+                    return new Point(
+                        Util.lerp(this.firstPoint.x, this.secondPoint.x, position),
+                        Util.lerp(this.firstPoint.y, this.secondPoint.y, position),
+                    );
+                },
+                // Replaces Util.movePt
+                movePointNormal: function(point, amount) {
+                    return new Point(this.vector.y, -this.vector.x).mult(amount).add(point);
+                },
+                // Replaces Util.center
+                getCenter: function() {
+                    return this.getPointAtPosition(0.5);
+                },
+
+                // Replaces Util.intersect
+                intersect: function(other) {
+                    const r = other.firstPoint.clone().subtract(this.firstPoint);
+                    const s = this.secondPoint.clone().subtract(this.firstPoint);
+                    const t = other.secondPoint.clone().subtract(other.firstPoint);
+
+                    const wedgeST = s.wedge(t);
+                    if (Math.abs(wedgeST) < Number.EPSILON)
+                        return;
+                    const u = r.wedge(t) / wedgeST;
+                    if (u <= 0 || u >= 1)
+                        return;
+                    const v = r.wedge(s) / wedgeST;
+                    if (v > 0 && v < 1)
+                        return s.mult(u).add(this.firstPoint);
+
+                    return;
+                },
+            };
+
+            return function(firstPoint, secondPoint) {
+                let self = Object.create(segmentObject);
+                self.firstPoint = firstPoint.clone();
+                self.secondPoint = secondPoint.clone();
+                return self;
+            }
+        })();
+
         const Util = {
-            lerp: (x, y, t) => x * (1 - t) + y * t,
-            rand: (f, t) => Util.mulberry32() * (t - f) + f,
+            // Done
             splitSeg: (p1, p2, t) => [Util.lerp(p1[0], p2[0], t), Util.lerp(p1[1], p2[1], t)],
+            // Done
             movePt: (p1, p2, t) => [p2[0] + (p2[1] - p1[1]) * t, p2[1] + (p1[0] - p2[0]) * t],
+            // Done
             wedge: (p1, p2) => p1[0] * p2[1] - p1[1] * p2[0],
+            // Done
             intersect: (p1, p2, p3, p4) => {
                 let r = [], s = [], t = [], wst = 0, u = 0, v = 0;
                 r = [p3[0] - p1[0], p3[1] - p1[1]]
@@ -56,10 +161,15 @@
                 v = Util.wedge(r, s) / wst
                 if (v > 0 && v < 1) return [p1[0] + u * s[0], p1[1] + u * s[1]]
             },
+            // Done
             norm: (v) => [v[0] / Math.sqrt(v[0] * v[0] + v[1] * v[1]), v[1] / Math.sqrt(v[0] * v[0] + v[1] * v[1])],
+            // Done
             adot: (v1, v2) => Math.abs(v1[0] * v2[0] + v1[1] * v2[1]),
+            // Done
             center: (p1, p2) => [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5],
-            // From here https://github.com/bryc/code/blob/master/jshash/PRNGs.md#lcg-lehmer-rng
+
+            lerp: (x, y, t) => x * (1 - t) + y * t,
+            rand: (f, t) => Util.mulberry32() * (t - f) + f,
             mulberry32: () => {
                 seed |= 0; seed = seed + 0x6D2B79F5 | 0;
                 let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
@@ -68,8 +178,103 @@
             },
         }
 
+        const DoubleLinkedList = (() => {
+            function Entry(index, previous, next){
+                return {index, previous, next};
+            }
+
+            const doubleLinkedListObject = {
+                start: null,
+
+                get length() {
+                    let count = 0;
+                    let current = this.start;
+                    while (current) {
+                        count++;
+                        current = current.next;
+                    }
+                    return count;
+                },
+
+                get indices() {
+                    let indices = [];
+                    let current = this.start;
+                    while (current) {
+                        indices.push(current.index);
+                        current = current.next;
+                    }
+                    return indices;
+                },
+
+                insertAfter: function(index, previous) {
+                    const el = new Entry(index, previous, previous.next);
+                    if (previous.next)
+                        previous.next.previous = el;
+                    previous.next = el;
+                    return el;
+                },
+
+                replace: function(index, entry) {
+                    const el = this.insertAfter(index, entry);
+                    this.remove(entry);
+                    return el;
+                },
+
+                remove: function(entry) {
+                    const previous = entry.previous;
+                    const next = entry.next;
+                    if (previous)
+                        previous.next = next;
+                    if (next)
+                        next.previous = previous;
+                },
+
+                reverseBetween: function(start, end) {
+                    let current = start.next;
+                    // Extract entries and remove them from list
+                    let entries = [];
+                    while (current !== end) {
+                        entries.push(current);
+                        current = current.next;
+                    }
+                    start.next = end;
+                    end.previous = start;
+
+                    // Re-insert reversed entries array
+                    current = start;
+                    entries.reverse().forEach(entry => {
+                        entry.previous = current;
+                        entry.next = current.next;
+                        current.next = entry;
+                        current = entry;
+                    }) ;
+                }
+            };
+
+            return function(elements) {
+                let self = Object.create(doubleLinkedListObject);
+
+                let current = null, previous = null;
+                elements.forEach((_, i) => {
+                    current = new Entry(i);
+                    if (previous)
+                    {
+                        previous.next = current;
+                        current.previous = previous;
+                    }
+                    previous = current;
+                    if (self.start === null)
+                        self.start = current;
+                });
+
+                return self;
+            }
+        })();
+
         const RoadGenerator = ({
-            points: [], roadSegments: [],
+            points: [], segments: [],
+
+            // TODO Fix cleanup method and check if points array can be dropped (use only segments)
 
             create: function() {
                 let self = Object.create(this);
@@ -81,18 +286,72 @@
 
             init: function() {
                 // Initial points
-                this.points = [0, 1, 2].map(_ => [Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)]);
+                const points = [0, 1, 2].map(_ => new Point(Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)));
+                this.segments = points.map((point, i) => new Segment(point, points[(i+1) % points.length]));
 
-                // Split each segment and move each new point
+                // Split segments and move new point along segment normal
                 for (let i = 0; i < 3; i++) {
-                    let tmp = this.points.slice();
-                    tmp.forEach((_, i) =>
-                        this.points.splice(
-                            i * 2 + 1, 0,
-                            Util.movePt(tmp[i], Util.splitSeg(tmp[i], tmp[(i + 1) % tmp.length], Util.rand(0.25, 0.75)), Util.rand(-0.4, 0.4))
-                        )
-                    );
+                    this.segments = this.segments.reduce((acc, seg, i) => {
+                        let newPoint = seg.movePointNormal(seg.getPointAtPosition(Util.rand(0.25, 0.75)), Util.rand(-0.4, 0.4));
+                        acc.push(new Segment(seg.firstPoint, newPoint));
+                        acc.push(new Segment(newPoint, seg.secondPoint));
+                        return acc;
+                    }, []);
                 }
+                this.points = this.segments.map(seg => seg.firstPoint);
+            },
+
+            splitSegments: function() {
+                // Build linked list
+                const list = new DoubleLinkedList(this.segments);
+                // TODO check what happens when start segment intersects
+
+                // Intersect and flip loops
+                let current = list.start;
+                while (current) {
+                    // Start comparing with next segment
+                    let other = current.next;
+                    while (other) {
+                        let intersectionPoint = this.segments[current.index].intersect(this.segments[other.index]);
+                        if (intersectionPoint) {
+                            // console.log(`before ${list.length} ${list.indices.join(", ")}`);
+                            // Split current in two and insert them in linked list
+                            let firstCurrentSegment = new Segment(this.segments[current.index].firstPoint, intersectionPoint);
+                            let secondCurrentSegment = new Segment(intersectionPoint, this.segments[current.index].secondPoint);
+                            let firstCurrent = list.replace(this.segments.length, current)
+                            let secondCurrent = list.insertAfter(this.segments.length + 1, firstCurrent);
+
+                            // Split other in two and insert them in linked list
+                            let firstOtherSegment = new Segment(this.segments[other.index].firstPoint, intersectionPoint);
+                            let secondOtherSegment = new Segment(intersectionPoint, this.segments[other.index].secondPoint);
+                            let firstOther = list.replace(this.segments.length + 2, other);
+                            let secondOther = list.insertAfter(this.segments.length + 3, firstOther);
+
+                            // Add new segments to list
+                            this.segments.push(firstCurrentSegment, secondCurrentSegment, firstOtherSegment, secondOtherSegment);
+
+                            // Invert loop between segments
+                            list.reverseBetween(firstCurrent, secondOther);
+                            // console.log(`after ${list.length} ${list.indices.join(", ")}`);
+                            current = firstCurrent;
+                            other = firstCurrent;
+                        }
+                        other = other.next;
+                    }
+                    current = current.next;
+                }
+                // Rebuild segment and point list from linked list
+                console.log(`before ${this.points.length}`);
+                let tmp = this.segments.slice();
+                this.segments = [];
+                this.points = [];
+                current = list.start;
+                while (current) {
+                    this.segments.push(tmp[current.index]);
+                    this.points.push(tmp[current.index].firstPoint);
+                    current = current.next;
+                }
+                console.log(`after ${this.points.length}`);
             },
 
             split: function(){
@@ -103,6 +362,8 @@
 
                 let start = null, current = null, previous = null, intersectionPoint = null, newSeg = null;
                 let  loops = [], visited = [], stack = [], tmp = [];
+
+                // Segment object {index: number, next: number}
 
                 // Convert points into segments
                 this.points.forEach((_, i) => {
@@ -124,10 +385,10 @@
                             );
                             if (intersectionPoint) {
                                 this.points.push(intersectionPoint);
-                                newSeg = { index: this.points.length - 1, next: current.next, id: this.points.length - 1 };
-                                current.next.previous = newSeg; current.next = newSeg;
-                                newSeg = { index: this.points.length - 1, next: comp.next, id: this.points.length };
-                                comp.next.previous = newSeg; comp.next = newSeg;
+                                newSeg = { index: this.points.length - 1, next: current.next };
+                                current.next = newSeg;
+                                newSeg = { index: this.points.length - 1, next: comp.next };
+                                comp.next = newSeg;
                             }
                         }
                         comp = comp.next;
@@ -160,11 +421,12 @@
 
             smooth: function() {
                 const smoothIterations = 20;
-                for (let i = 0; i < smoothIterations; i++)
-                    this.points = this.points.map((point, i) => [
-                        point[0] * 0.95 + (this.points[i ? i - 1 : this.points.length - 1][0] + this.points[(i + 1) % this.points.length][0]) * 0.5 * 0.05,
-                        point[1] * 0.95 + (this.points[i ? i - 1 : this.points.length - 1][1] + this.points[(i + 1) % this.points.length][1]) * 0.5 * 0.05
-                    ]);
+                for (let _ = 0; _ < smoothIterations; _++) {
+                    this.points = this.points.map((point, i) => new Point(
+                        point.x * 0.95 + (this.points[i ? i - 1 : this.points.length - 1].x + this.points[(i + 1) % this.points.length].x) * 0.5 * 0.05,
+                        point.y * 0.95 + (this.points[i ? i - 1 : this.points.length - 1].y + this.points[(i + 1) % this.points.length].y) * 0.5 * 0.05
+                    ));
+                }
             },
 
             cleanup: function() {
@@ -205,15 +467,14 @@
             run: function() {
                 seed = this.pane.seed;
                 if (this.pane.feature >= 0) this.init();
-                if (this.pane.feature >= 1) this.split();
+                if (this.pane.feature >= 1) this.splitSegments();
                 if (this.pane.feature >= 2) this.smooth();
                 if (this.pane.feature >= 3) this.cleanup();
             }
         }).create();
 
         ({
-            w: 0, h: 0, ctx: null,
-            zoom: 1, cameraPos: [0, 0],
+            w: 0, h: 0, ctx: null, zoom: 1, cameraPos: null,
             init: function () {
                 this.ctx = canvas.getContext("2d");
                 this.resize = this.resize.bind(this);
@@ -232,21 +493,21 @@
                 window.onresize = this.resize;
 
                 // TODO further cleanup (extract some parameters to class or make a camera class)
-                let lastPoint = null;
+                let lastPoint = new Point(0, 0);
+                this.cameraPos = new Point(0, 0);
                 let mousedown = false;
                 let zoomSpeed = 0.1;
                 let zoomFactor = 0;
                 canvas.onmousedown = e => {
                     mousedown = true;
-                    lastPoint = [e.pageX, e.pageY];
+                    lastPoint = new Point(e.pageX, e.pageY);
                 }
                 canvas.onmouseup = e => mousedown = false;
                 canvas.onmousemove = e => {
                     if (!mousedown) return;
-                    let x = e.pageX, y = e.pageY;
-                    this.cameraPos[0] += (x - lastPoint[0]) / this.zoom;
-                    this.cameraPos[1] += (y - lastPoint[1]) / this.zoom;
-                    lastPoint = [x, y]
+                    let offset = new Point(e.pageX, e.pageY).subtract(lastPoint).mult(1/this.zoom);
+                    this.cameraPos.add(offset);
+                    lastPoint = new Point(e.pageX, e.pageY);
                 }
                 canvas.onwheel = e => {
                     zoomFactor += e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
@@ -255,7 +516,7 @@
                 canvas.ondblclick = e => {
                     zoomFactor = 0;
                     this.zoom = Math.pow(Math.E, -2 * zoomFactor);
-                    this.cameraPos = [0, 0];
+                    this.cameraPos = new Point(0, 0);
                 }
             },
             render: function(t) {
@@ -268,12 +529,13 @@
                 ctx.fillRect(0, 0, w, h);
 
                 // Shift road to center
-                let center = points.reduce((acc, point) => { acc[0] += point[0] / points.length; acc[1] += point[1] / points.length; return acc; }, [0, 0]);
+                //let center = points.reduce((acc, point) => { acc.x += point.x / points.length; acc.y += point.y / points.length; return acc; }, {x:0, y:0});
+                let center = {x: w/2, y: h/2};
                 ctx.setTransform(
                     this.zoom, 0,
                     0, this.zoom,
-                    w * 0.5 + (this.cameraPos[0] - center[0]) * this.zoom,
-                    h * 0.5 + (this.cameraPos[1] - center[1]) * this.zoom
+                    w * 0.5 + (this.cameraPos.x - center.x) * this.zoom,
+                    h * 0.5 + (this.cameraPos.y - center.y) * this.zoom
                 );
 
                 // Render road
@@ -282,10 +544,10 @@
                 if (feature < 3)
                     points.forEach((point, i) => {
                         ctx.strokeStyle = ctx.fillStyle = `hsl(${i * 20},100%,50%)`;
-                        ctx.fillRect(point[0] - 3 / this.zoom, point[1] - 3 / this.zoom, 6 / this.zoom, 6 / this.zoom);
+                        ctx.fillRect(point.x - 3 / this.zoom, point.y - 3 / this.zoom, 6 / this.zoom, 6 / this.zoom);
                         ctx.beginPath();
-                        ctx.moveTo(point[0], point[1]);
-                        ctx.lineTo(points[(i + 1) % points.length][0], points[(i + 1) % points.length][1]);
+                        ctx.moveTo(point.x, point.y);
+                        ctx.lineTo(points[(i + 1) % points.length].x, points[(i + 1) % points.length].y);
                         ctx.stroke();
                     });
                 else
