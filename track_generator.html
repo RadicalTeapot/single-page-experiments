@@ -458,12 +458,18 @@
                 ctx.fillRect(0, 0, w, h);
 
                 // Shift road to center
-                //let center = points.reduce((acc, point) => { acc.x += point.x / points.length; acc.y += point.y / points.length; return acc; }, {x:0, y:0});
-                let center = {x: w/2, y: h/2};
+                const bbox = segments.reduce((acc, seg) => {
+                    const {firstPoint, secondPoint} = seg;
+                    acc.min.x = Math.min(firstPoint.x, secondPoint.x, acc.min.x);
+                    acc.min.y = Math.min(firstPoint.y, secondPoint.y, acc.min.y);
+                    acc.max.x = Math.max(firstPoint.x, secondPoint.x, acc.max.x);
+                    acc.max.y = Math.max(firstPoint.y, secondPoint.y, acc.max.y);
+                    return acc;
+                }, {min: new Point(w, h), max: new Point(0, 0)});
+                const center = this.camera.position.clone().subtract(bbox.min.add(bbox.max).mult(0.5)).mult(this.camera.zoomAmount);
                 ctx.setTransform(
                     this.camera.zoomAmount, 0, 0, this.camera.zoomAmount,
-                    w * 0.5 + (this.camera.position.x - center.x) * this.camera.zoomAmount,
-                    h * 0.5 + (this.camera.position.y - center.y) * this.camera.zoomAmount
+                    w * 0.5 + center.x, h * 0.5 + center.y
                 );
 
                 // Render road
