@@ -142,32 +142,6 @@
         })();
 
         const Util = {
-            // Done
-            splitSeg: (p1, p2, t) => [Util.lerp(p1[0], p2[0], t), Util.lerp(p1[1], p2[1], t)],
-            // Done
-            movePt: (p1, p2, t) => [p2[0] + (p2[1] - p1[1]) * t, p2[1] + (p1[0] - p2[0]) * t],
-            // Done
-            wedge: (p1, p2) => p1[0] * p2[1] - p1[1] * p2[0],
-            // Done
-            intersect: (p1, p2, p3, p4) => {
-                let r = [], s = [], t = [], wst = 0, u = 0, v = 0;
-                r = [p3[0] - p1[0], p3[1] - p1[1]]
-                s = [p2[0] - p1[0], p2[1] - p1[1]]
-                t = [p4[0] - p3[0], p4[1] - p3[1]]
-                wst = Util.wedge(s, t)
-                if (Math.abs(wst) < Number.EPSILON) return
-                u = Util.wedge(r, t) / wst
-                if (u <= 0 || u >= 1) return
-                v = Util.wedge(r, s) / wst
-                if (v > 0 && v < 1) return [p1[0] + u * s[0], p1[1] + u * s[1]]
-            },
-            // Done
-            norm: (v) => [v[0] / Math.sqrt(v[0] * v[0] + v[1] * v[1]), v[1] / Math.sqrt(v[0] * v[0] + v[1] * v[1])],
-            // Done
-            adot: (v1, v2) => Math.abs(v1[0] * v2[0] + v1[1] * v2[1]),
-            // Done
-            center: (p1, p2) => [(p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5],
-
             lerp: (x, y, t) => x * (1 - t) + y * t,
             rand: (f, t) => Util.mulberry32() * (t - f) + f,
             mulberry32: () => {
@@ -354,6 +328,7 @@
                 console.log(`after ${this.points.length}`);
             },
 
+            /*
             split: function(){
                 // TODO this probably could be trimmed down by skipping segments and just using
                 // an object to track where to insert the intersection points (e.g {pos:[x,y], id1:currentPointIndex, id2:compPointIndex})
@@ -418,6 +393,7 @@
                     loop.forEach((pointIndex, i) => this.points[pointIndex] = tmp[loop[loop.length - i - 1]])
                 })
             },
+            */
 
             smooth: function() {
                 const smoothIterations = 20;
@@ -473,8 +449,35 @@
             }
         }).create();
 
+        const Camera = (() => {
+            const ZOOM_SPEED = 0.1;
+            const cameraObject = {
+                position: null,
+                zoomAmount: 1,
+                zoomFactor: 0,
+
+                pan(offset) {
+                    this.position.add(offset.clone().mult(1/this.zoomAmount));
+                },
+                zoom(delta) {
+                    this.zoomFactor += delta > 0 ? ZOOM_SPEED : -ZOOM_SPEED;
+                    this.zoomAmount = Math.pow(Math.E, -2 * this.zoomFactor);
+                },
+                reset() {
+                    this.zoomFactor = 0;
+                    this.zoomAmount = Math.pow(Math.E, -2 * this.zoomFactor);
+                    this.position = new Point(0, 0);
+                }
+            };
+            return function() {
+                let self = Object.create(cameraObject);
+                self.reset();
+                return self;
+            }
+        })();
+
         ({
-            w: 0, h: 0, ctx: null, zoom: 1, cameraPos: null,
+            w: 0, h: 0, ctx: null, zoom: 1, camera: null,
             init: function () {
                 this.ctx = canvas.getContext("2d");
                 this.resize = this.resize.bind(this);
@@ -492,12 +495,9 @@
             connect: function() {
                 window.onresize = this.resize;
 
-                // TODO further cleanup (extract some parameters to class or make a camera class)
                 let lastPoint = new Point(0, 0);
-                this.cameraPos = new Point(0, 0);
                 let mousedown = false;
-                let zoomSpeed = 0.1;
-                let zoomFactor = 0;
+                this.camera = new Camera();
                 canvas.onmousedown = e => {
                     mousedown = true;
                     lastPoint = new Point(e.pageX, e.pageY);
@@ -505,19 +505,12 @@
                 canvas.onmouseup = e => mousedown = false;
                 canvas.onmousemove = e => {
                     if (!mousedown) return;
-                    let offset = new Point(e.pageX, e.pageY).subtract(lastPoint).mult(1/this.zoom);
-                    this.cameraPos.add(offset);
+                    let offset = new Point(e.pageX, e.pageY).subtract(lastPoint);
                     lastPoint = new Point(e.pageX, e.pageY);
+                    this.camera.pan(offset);
                 }
-                canvas.onwheel = e => {
-                    zoomFactor += e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
-                    this.zoom = Math.pow(Math.E, -2 * zoomFactor);
-                };
-                canvas.ondblclick = e => {
-                    zoomFactor = 0;
-                    this.zoom = Math.pow(Math.E, -2 * zoomFactor);
-                    this.cameraPos = new Point(0, 0);
-                }
+                canvas.onwheel = e => this.camera.zoom(e.deltaY);
+                canvas.ondblclick = e => this.camera.reset();
             },
             render: function(t) {
                 const {ctx, w, h} = this;
@@ -532,19 +525,18 @@
                 //let center = points.reduce((acc, point) => { acc.x += point.x / points.length; acc.y += point.y / points.length; return acc; }, {x:0, y:0});
                 let center = {x: w/2, y: h/2};
                 ctx.setTransform(
-                    this.zoom, 0,
-                    0, this.zoom,
-                    w * 0.5 + (this.cameraPos.x - center.x) * this.zoom,
-                    h * 0.5 + (this.cameraPos.y - center.y) * this.zoom
+                    this.camera.zoomAmount, 0, 0, this.camera.zoomAmount,
+                    w * 0.5 + (this.camera.position.x - center.x) * this.camera.zoomAmount,
+                    h * 0.5 + (this.camera.position.y - center.y) * this.camera.zoomAmount
                 );
 
                 // Render road
-                ctx.lineWidth = 2 / this.zoom;
+                ctx.lineWidth = 2 / this.camera.zoomAmount;
 
                 if (feature < 3)
                     points.forEach((point, i) => {
                         ctx.strokeStyle = ctx.fillStyle = `hsl(${i * 20},100%,50%)`;
-                        ctx.fillRect(point.x - 3 / this.zoom, point.y - 3 / this.zoom, 6 / this.zoom, 6 / this.zoom);
+                        ctx.fillRect(point.x - 3 / this.camera.zoomAmount, point.y - 3 / this.camera.zoomAmount, 6 / this.camera.zoomAmount, 6 / this.camera.zoomAmount);
                         ctx.beginPath();
                         ctx.moveTo(point.x, point.y);
                         ctx.lineTo(points[(i + 1) % points.length].x, points[(i + 1) % points.length].y);

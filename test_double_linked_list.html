@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test double linked list</title>
+</head>
+
+<body>
+    <p>Source: <span id="sourceSpan"></span></p>
+    <p>Result: <span id="resultSpan"></span></p>
+    <script>
+        "use strict";
+        const source = ["a", "b", "c", "d", "e", "f"];
+        sourceSpan.innerText = source.join(", ");
+        let start = null, current = null, previous = null;
+        source.forEach((_, i) => {
+            current = { index: i, previous: null, next: null };
+            if (previous) {
+                previous.next = current;
+                current.previous = previous;
+            }
+            previous = current;
+            if (start === null)
+                start = current;
+        });
+
+        const beginning = start; // a
+        const end = beginning.next.next.next.next; // e
+
+        // Extract entries and remove them from list
+        current = beginning.next;
+        let entries = [];
+        while (current !== end) {
+            entries.push(current);
+            current = current.next;
+        }
+        beginning.next = end;
+        end.previous = beginning;
+
+        // Re-insert reversed entries array
+        current = beginning;
+        entries.reverse().forEach(entry => {
+            entry.previous = current;
+            entry.next = current.next;
+            current.next = entry;
+            current = entry;
+        });
+
+        current = start;
+        let result = [];
+        while (current) {
+            result.push(source[current.index]);
+            current = current.next;
+        }
+        resultSpan.innerText = result.join(", ");
+    </script>
+</body>
+
+</html>

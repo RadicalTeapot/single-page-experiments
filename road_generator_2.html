@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        * {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        'use strict';
+        const mulberry32 = (a) => (() => {
+            a |= 0; a = a + 0x6D2B79F5 | 0;
+            let t = Math.imul(a ^ a >>> 15, 1 | a);
+            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+            return ((t ^ t >>> 14) >>> 0) / (0xFFFFFFFF + 1);
+        });
+
+        const camera = ({
+            position: 0,
+            create: function() {
+                let self = Object.create(this);
+                return self;
+            }
+        }).create();
+
+        ({
+            w: 0, h: 0,
+            sectionSize: 10000, // Should be bigger than width
+            subSectionCount: 5,
+            resampleSize: 10,
+            cameraSpeed: 10,
+            grassBandSize: 200,
+            startT: null,
+            currentRoad: null,
+            nextRoad: null,
+            keys: { up: false, down: false },
+            init: function () {
+                this.ctx = canvas.getContext("2d");
+                this.seed = (Math.random() * 0xFFFF)|0;
+                this.connectKeys();
+                this.render = this.render.bind(this);
+                requestAnimationFrame(this.render);
+            },
+            connectKeys: function() {
+                document.onkeydown = e => {
+                    switch(e.key) {
+                        case 'ArrowUp': this.keys.up = true; break;
+                        case 'ArrowDown': this.keys.down = true; break;
+                    }
+                }
+                document.onkeyup = e => {
+                    switch(e.key) {
+                        case 'ArrowUp': this.keys.up = false; break;
+                        case 'ArrowDown': this.keys.down = false; break;
+                    }
+                }
+            },
+            getRoadSubSection: function (index) {
+                const noise = mulberry32(this.seed + ((index * 10) & 0xFFFF));
+                let difficulty = noise();
+                difficulty = -2 * Math.pow(difficulty, 3) + 3 * Math.pow(difficulty, 2);
+                const dx = 0.5 * (1-difficulty) + 0.025 * difficulty;
+                const dy = 0.3 * difficulty;
+                let length = 0;
+                let points = [];
+                while (true) {
+                    points.push({
+                        x: length < 1 ? length : 1,
+                        y: (noise() * 2 - 1) * dy + 0.5
+                    });
+                    if (length >= 1) break;
+                    length += (noise() * dx + 0.025);
+                }
+                return points;
+            },
+            evalRoadSection: function(section, position) {
+                let index = -1;
+                section.forEach((point, i) => index = point.x <= position ? i : index);
+                const t = (position - section[index].x) / (section[index+1].x - section[index].x);
+                return section[index].y * (1 - t) + section[index+1].y * t;
+            },
+            buildRoad: function(sectionIndex, previousRoad) {
+                let offset = (sectionIndex * this.subSectionCount) & 0xFFFF;
+                let subsections = Array.apply(null, new Array(this.subSectionCount)).map((v, i) => this.getRoadSubSection(i + offset));
+                // Connect each subsection together
+                subsections.forEach((section, i) => {
+                    if (i > 0)
+                        section[0].y = subsections[i-1][subsections[i-1].length-1].y;
+                });
+
+                // Flatten the subsections into a single array
+                let road = subsections.reduce((acc, section, i) => {
+                    // Keep the first point only for the first segment
+                    acc.push(...section.slice(i == 0 ? 0 : 1).map(point => ({x:(point.x+i)/subsections.length, y:point.y})));
+                    return acc;
+                }, []);
+
+                // Resample the road at even intervals
+                const pointCount = Math.ceil(this.sectionSize/this.resampleSize);
+                road = Array.apply(null, new Array(pointCount)).map((v, i) => ({x: i/(pointCount-1), y:this.evalRoadSection(road, i/pointCount)}));
+
+                // Set first and last point y position to screen center
+                road[0].y = 0.5;
+                road[road.length-1].y = 0.5;
+
+                // Smooth
+                for (let i = 0; i < 10; i++) {
+                    road = road.map((point, i) => {
+                        if (i === 0 || i === road.length-1)
+                            return road[i];
+                        return {x: road[i].x, y: (road[i-1].y + road[i].y + road[i+1].y) / 3};
+                    });
+                }
+
+                // Set first and last point y position to screen center
+                road[0].y = 0.5;
+                road[road.length-1].y = 0.5;
+                // Match previous road last piece slope
+                if (previousRoad !== undefined) {
+                    const slope = (previousRoad[previousRoad.length - 2].y - previousRoad[previousRoad.length - 1].y) / this.resampleSize;
+                    road[1].y = 0.5 - slope * this.resampleSize;
+                }
+
+                // TODO Remove points for linear roads pieces
+                let indicesToDrop = [];
+                let originalIndex = -1, currentIndex = -1;
+                const getDot = (a,b,c) => {
+                    let current = {x:b.x - a.x, y: b.y - a.y};
+                    let next = {x:c.x - b.x, y: c.y - b.y};
+                    let l = Math.sqrt(current.x*current.x + current.y*current.y);
+                    current.x /= l; current.y /=l;
+                    l = Math.sqrt(next.x*next.x + next.y*next.y);
+                    next.x /= l; next.y /= l;
+                    return current.x * next.x + current.y * next.y;
+                }
+                for (let i = 0 ; i < road.length - 2; i++) {
+                    if (originalIndex === -1 && getDot(road[i], road[i+1], road[i+2]) > 0.999)
+                        originalIndex = i;
+                    else if (originalIndex >= 0 && getDot(road[originalIndex], road[i], road[i+1]) > 0.999)
+                        indicesToDrop.push(i);
+                    else
+                        originalIndex = -1;
+                }
+                road = road.filter((_, i) => indicesToDrop.indexOf(i) == -1);
+
+                return road;
+            },
+            render: function (t) {
+                if (this.startT === null) this.startT = t;
+
+                let move = 0;
+                if (this.keys.up) move += 1
+                if (this.keys.down) move -= 1;
+                // camera.position += move * this.cameraSpeed;
+                camera.position = (t - this.startT) * this.cameraSpeed * 0.033;
+
+                this.w = innerWidth; this.h = innerHeight;
+                canvas.width = this.w; canvas.height = this.h;
+                this.ctx.fillStyle = "#5e994c";
+                this.ctx.fillRect(0, 0, this.w, this.h);
+                this.ctx.fillStyle = "#367233";
+                this.ctx.beginPath();
+                for (let i = -2; i < this.h / this.grassBandSize + 2; i+= 2)
+                    this.ctx.rect(0, i*this.grassBandSize + (camera.position % (this.grassBandSize * 2)), this.w, this.grassBandSize);
+                this.ctx.fill();
+
+                const index = Math.floor(camera.position / this.sectionSize);
+                if (this.currentRoad === null || this.currentRoad.index !== index)
+                {
+                    this.currentRoad = {index: index, road: this.buildRoad(index)};
+                    this.nextRoad = {index: index+1, road: this.buildRoad(index+1, this.currentRoad.road)};
+                }
+
+                this.ctx.lineWidth = 120;
+                this.ctx.lineJoin = 'round';
+                this.ctx.strokeStyle = "#606060";
+
+                const offset = this.sectionSize + (camera.position >= 0 ? camera.position % this.sectionSize: (this.sectionSize - (Math.abs(camera.position + 1) % this.sectionSize) - 1));
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.currentRoad.road[0].y * this.w, offset - this.currentRoad.road[0].x * this.sectionSize);
+                this.currentRoad.road.slice(1).forEach(point => this.ctx.lineTo(point.y * this.w, offset - point.x * this.sectionSize));
+
+                if (this.sectionSize - offset < this.h)
+                    this.nextRoad.road.forEach(point => this.ctx.lineTo(point.y * this.w, offset - (point.x+1) * this.sectionSize));
+                this.ctx.stroke();
+
+                requestAnimationFrame(this.render);
+            }
+        }).init();
+    </script>
+</body>
+
+</html>

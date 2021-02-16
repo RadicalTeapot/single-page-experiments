@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music generator</title>
+    <script src="https://unpkg.com/tone@latest/build/Tone.js"></script>
+</head>
+<body>
+    <input id="playBtn" value="▶" type="button">
+    <p><span id="patternSpan"></span></p>
+    <script>
+        const generatePattern = () => {
+            const getNote = (length) => [`${length}n`, Math.random() > 0.33];
+            const getCell = (length) => {
+                if (length === 2)
+                    return Math.random() > 0.5 ? [getNote(8), getNote(8)] : [getNote(4)];
+                else {
+                    let r = Math.random();
+                    if (r <= 1/3) return [getNote(8), getNote(8), getNote(8)];
+                    else if (r <= 2/3) return [getNote(4), getNote(8)];
+                    return [getNote(8), getNote(4)];
+                }
+            }
+            let cells = [];
+            while (true) {
+                cells.push(getCell(Math.random() > 0.5 ? 2 : 3));
+                if (Math.random() > 0.66) break;
+            }
+            return cells;
+        };
+        const quarterNote = "♩",
+            eighthNote = "♪",
+            quarterRest = "𝄽",
+            eighthRest = "𝄾";
+        playBtn.onclick = async (e) => {
+            await Tone.start();
+            const synth = new Tone.MonoSynth({
+                oscillator: {type: "sawtooth"},
+                envelope: {attack: 0.1, release: 0.1, releaseCurve: 'linear'},
+                filterEnvelope: {baseFrequency: "200", octaves: 2, attack: 0, decay: 0, release: 4},
+            }).toDestination();
+
+            const pattern = generatePattern();
+            patternSpan.innerText = pattern.reduce((prev, cell) => {
+                cell.forEach(note => {
+                    if (note[0] === '8n' && !note[1]) prev.push(eighthRest);
+                    else if (note[0] === '8n' && note[1]) prev.push(eighthNote);
+                    else if (note[1] === '4n' && !note[1]) prev.push(quarterRest);
+                    else prev.push(quarterNote);
+                })
+                return prev;
+            }, []).join("");
+            const patternLength = pattern.reduce((prev, cell) => {
+                cell.forEach(note => prev += note[0] === '8n' ? 2 : 4);
+                return prev;
+            }, 0);
+
+            new Tone.Loop(time => {
+                let position = 0; // in sixteenth
+                let length = 0;
+                pattern.forEach(cell => {
+                    cell.forEach(note => {
+                        if (note[0] === '8n') length = 2;
+                        else length = 4;
+                        if (note[1])
+                            synth.triggerAttackRelease('C4', `0:0:${length/2}`, position === 0 ? time : `+0:0:${position}`);
+                        position += length;
+                    });
+                });
+            }, `0:0:${patternLength}`).start();
+            Tone.Transport.start("+0:0:2");
+            Tone.Transport.stop(`+0:0:${patternLength+2}`);
+        }
+    </script>
+</body>
+</html>
