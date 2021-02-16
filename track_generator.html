@@ -19,11 +19,9 @@
     <canvas id="canvas"></canvas>
     <script>
         "use strict";
-        let seed = 270979890;
-
         const Pane = (() => {
             const params = {
-                seed: 270979890,
+                seed: 270979880,
                 feature: 2,
             };
 
@@ -135,18 +133,21 @@
 
             return function(firstPoint, secondPoint) {
                 let self = Object.create(segmentObject);
-                self.firstPoint = firstPoint.clone();
-                self.secondPoint = secondPoint.clone();
+                // Don't clone points so instances are shared by connected segments
+                self.firstPoint = firstPoint;
+                self.secondPoint = secondPoint;
                 return self;
             }
         })();
 
         const Util = {
+            seed: 0,
             lerp: (x, y, t) => x * (1 - t) + y * t,
             rand: (f, t) => Util.mulberry32() * (t - f) + f,
-            mulberry32: () => {
-                seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-                let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+            mulberry32: function() {
+                this.seed |= 0;
+                this.seed = this.seed + 0x6D2B79F5 | 0;
+                let t = Math.imul(this.seed ^ this.seed >>> 15, 1 | this.seed);
                 t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
                 return ((t ^ t >>> 14) >>> 0) / (0xFFFFFFFF + 1);
             },
@@ -221,7 +222,9 @@
                         entry.next = current.next;
                         current.next = entry;
                         current = entry;
-                    }) ;
+                    });
+                    // Return entries so their point order can be flipped
+                    return entries;
                 }
             };
 
@@ -246,10 +249,8 @@
         })();
 
         const RoadGenerator = ({
-            points: [], segments: [],
-
-            // TODO Fix cleanup method and check if points array can be dropped (use only segments)
-
+            // TODO Fix cleanup method
+            segments: [],
             create: function() {
                 let self = Object.create(this);
                 self.run = self.run.bind(self);
@@ -257,7 +258,6 @@
                 self.run();
                 return self;
             },
-
             init: function() {
                 // Initial points
                 const points = [0, 1, 2].map(_ => new Point(Util.rand(0, 5 * innerWidth / 6), Util.rand(0, 5 * innerHeight / 6)));
@@ -272,13 +272,11 @@
                         return acc;
                     }, []);
                 }
-                this.points = this.segments.map(seg => seg.firstPoint);
             },
-
             splitSegments: function() {
                 // Build linked list
                 const list = new DoubleLinkedList(this.segments);
-                // TODO check what happens when start segment intersects
+                // TODO check what happens when start segment intersects (i.e. with seed 270979897)
 
                 // Intersect and flip loops
                 let current = list.start;
@@ -288,7 +286,6 @@
                     while (other) {
                         let intersectionPoint = this.segments[current.index].intersect(this.segments[other.index]);
                         if (intersectionPoint) {
-                            // console.log(`before ${list.length} ${list.indices.join(", ")}`);
                             // Split current in two and insert them in linked list
                             let firstCurrentSegment = new Segment(this.segments[current.index].firstPoint, intersectionPoint);
                             let secondCurrentSegment = new Segment(intersectionPoint, this.segments[current.index].secondPoint);
@@ -296,6 +293,8 @@
                             let secondCurrent = list.insertAfter(this.segments.length + 1, firstCurrent);
 
                             // Split other in two and insert them in linked list
+                            // Clone intersection point so it is not shared with two new first segments
+                            intersectionPoint = intersectionPoint.clone();
                             let firstOtherSegment = new Segment(this.segments[other.index].firstPoint, intersectionPoint);
                             let secondOtherSegment = new Segment(intersectionPoint, this.segments[other.index].secondPoint);
                             let firstOther = list.replace(this.segments.length + 2, other);
@@ -305,8 +304,17 @@
                             this.segments.push(firstCurrentSegment, secondCurrentSegment, firstOtherSegment, secondOtherSegment);
 
                             // Invert loop between segments
-                            list.reverseBetween(firstCurrent, secondOther);
-                            // console.log(`after ${list.length} ${list.indices.join(", ")}`);
+                            const flippedEntries = list.reverseBetween(firstCurrent, secondOther);
+                            // Re-order points for flipped entries
+                            flippedEntries.forEach(entry => {
+                                const tmp = this.segments[entry.index].firstPoint;
+                                this.segments[entry.index].firstPoint = this.segments[entry.index].secondPoint;
+                                this.segments[entry.index].secondPoint = tmp;
+                            });
+                            // Re-order first and last points too
+                            firstOtherSegment.firstPoint = firstCurrentSegment.secondPoint;
+                            secondCurrentSegment.secondPoint = secondOtherSegment.firstPoint;
+                            // Keep iterating
                             current = firstCurrent;
                             other = firstCurrent;
                         }
@@ -314,20 +322,15 @@
                     }
                     current = current.next;
                 }
-                // Rebuild segment and point list from linked list
-                console.log(`before ${this.points.length}`);
+                // Rebuild segment from linked list
                 let tmp = this.segments.slice();
                 this.segments = [];
-                this.points = [];
                 current = list.start;
                 while (current) {
                     this.segments.push(tmp[current.index]);
-                    this.points.push(tmp[current.index].firstPoint);
                     current = current.next;
                 }
-                console.log(`after ${this.points.length}`);
             },
-
             /*
             split: function(){
                 // TODO this probably could be trimmed down by skipping segments and just using
@@ -394,17 +397,17 @@
                 })
             },
             */
-
             smooth: function() {
                 const smoothIterations = 20;
                 for (let _ = 0; _ < smoothIterations; _++) {
-                    this.points = this.points.map((point, i) => new Point(
-                        point.x * 0.95 + (this.points[i ? i - 1 : this.points.length - 1].x + this.points[(i + 1) % this.points.length].x) * 0.5 * 0.05,
-                        point.y * 0.95 + (this.points[i ? i - 1 : this.points.length - 1].y + this.points[(i + 1) % this.points.length].y) * 0.5 * 0.05
-                    ));
+                    this.segments.forEach((seg, i) => {
+                        const previous = i ? this.segments[i-1].firstPoint : this.segments[this.segments.length-1].firstPoint;
+                        const next = seg.secondPoint;
+                        const center = new Segment(previous, next).getCenter();
+                        seg.firstPoint.mult(0.95).add(center.mult(0.05));
+                    });
                 }
             },
-
             cleanup: function() {
                 let previous = 0, next = 0, segNext = 0;
 
@@ -439,9 +442,8 @@
                         ]);
                 });
             },
-
             run: function() {
-                seed = this.pane.seed;
+                Util.seed = this.pane.seed;
                 if (this.pane.feature >= 0) this.init();
                 if (this.pane.feature >= 1) this.splitSegments();
                 if (this.pane.feature >= 2) this.smooth();
@@ -514,7 +516,7 @@
             },
             render: function(t) {
                 const {ctx, w, h} = this;
-                const {points, roadSegments} = RoadGenerator;
+                const {segments} = RoadGenerator;
                 const {feature} = RoadGenerator.pane;
 
                 // Black background
@@ -532,15 +534,21 @@
 
                 // Render road
                 ctx.lineWidth = 2 / this.camera.zoomAmount;
+                ctx.font = '6px monospace';
 
                 if (feature < 3)
-                    points.forEach((point, i) => {
+                    segments.forEach((seg, i) => {
+                        const {firstPoint, secondPoint} = seg;
                         ctx.strokeStyle = ctx.fillStyle = `hsl(${i * 20},100%,50%)`;
-                        ctx.fillRect(point.x - 3 / this.camera.zoomAmount, point.y - 3 / this.camera.zoomAmount, 6 / this.camera.zoomAmount, 6 / this.camera.zoomAmount);
+                        ctx.fillRect(
+                            firstPoint.x - 3 / this.camera.zoomAmount, firstPoint.y - 3 / this.camera.zoomAmount,
+                            6 / this.camera.zoomAmount, 6 / this.camera.zoomAmount
+                        );
                         ctx.beginPath();
-                        ctx.moveTo(point.x, point.y);
-                        ctx.lineTo(points[(i + 1) % points.length].x, points[(i + 1) % points.length].y);
+                        ctx.moveTo(firstPoint.x, firstPoint.y);
+                        ctx.lineTo(secondPoint.x, secondPoint.y);
                         ctx.stroke();
+                        ctx.fillText(i, firstPoint.x - 2, firstPoint.y - 2);
                     });
                 else
                     roadSegments.forEach(seg => {
