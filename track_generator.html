@@ -276,6 +276,7 @@
                     }
                 },
                 splitSegments: function () {
+
                     // Build linked list
                     const list = new DoubleLinkedList(this.segments);
 
@@ -287,22 +288,16 @@
                         while (other) {
                             let intersectionPoint = this.segments[current.index].intersect(this.segments[other.index]);
                             if (intersectionPoint) {
-                                // Split current in two and insert them in linked list
-                                let firstCurrentSegment = new Segment(this.segments[current.index].firstPoint, intersectionPoint);
-                                let secondCurrentSegment = new Segment(intersectionPoint, this.segments[current.index].secondPoint);
                                 let firstCurrent = list.replace(this.segments.length, current)
                                 let secondCurrent = list.insertAfter(this.segments.length + 1, firstCurrent);
-
-                                // Split other in two and insert them in linked list
-                                // Clone intersection point so it is not shared with two new first segments
-                                intersectionPoint = intersectionPoint.clone();
-                                let firstOtherSegment = new Segment(this.segments[other.index].firstPoint, intersectionPoint);
-                                let secondOtherSegment = new Segment(intersectionPoint, this.segments[other.index].secondPoint);
                                 let firstOther = list.replace(this.segments.length + 2, other);
                                 let secondOther = list.insertAfter(this.segments.length + 3, firstOther);
 
-                                // Add new segments to list
-                                this.segments.push(firstCurrentSegment, secondCurrentSegment, firstOtherSegment, secondOtherSegment);
+                                // Create new segments
+                                let [
+                                    firstCurrentSegment, secondCurrentSegment,
+                                    firstOtherSegment, secondOtherSegment
+                                ] = this.splitAtIntersection(intersectionPoint, current.index, other.index);
 
                                 // Invert loop between segments
                                 const flippedEntries = list.reverseBetween(firstCurrent, secondOther);
@@ -331,6 +326,19 @@
                         this.segments.push(tmp[current.index]);
                         current = current.next;
                     }
+                },
+                splitAtIntersection: function(intersectionPoint, firstIndex, secondIndex) {
+                    // Clone intersection point so it is not shared with two new first segments
+                    intersectionPoint = intersectionPoint.clone();
+                    const first = new Segment(this.segments[firstIndex].firstPoint, intersectionPoint);
+                    const second = new Segment(intersectionPoint, this.segments[firstIndex].secondPoint);
+                    // Clone intersection point so it is not shared with two new first segments
+                    intersectionPoint = intersectionPoint.clone();
+                    const third = new Segment(this.segments[secondIndex].firstPoint, intersectionPoint);
+                    const fourth = new Segment(intersectionPoint, this.segments[secondIndex].secondPoint);
+                    // Add new segments to list
+                    this.segments.push(first, second, third, fourth);
+                    return [first, second, third, fourth];
                 },
                 smooth: function () {
                     for (let _ = 0; _ < SMOOTH_ITERATIONS; _++) {
