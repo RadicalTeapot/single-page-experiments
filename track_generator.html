@@ -90,6 +90,8 @@
         })();
 
         const Segment = (() => {
+            const INTERSECT_TOLERANCE = 0.01;
+
             const segmentObject = {
                 firstPoint: null, secondPoint: null, controlPoint: null, curveAmount: 0,
 
@@ -121,10 +123,10 @@
                     if (Math.abs(wedgeST) < Number.EPSILON)
                         return;
                     const u = r.wedge(t) / wedgeST;
-                    if (u <= 0 || u >= 1)
+                    if (u <= INTERSECT_TOLERANCE || u >= (1 - INTERSECT_TOLERANCE))
                         return;
                     const v = r.wedge(s) / wedgeST;
-                    if (v > 0 && v < 1)
+                    if (v > INTERSECT_TOLERANCE && v < (1 - INTERSECT_TOLERANCE))
                         return s.mult(u).add(this.firstPoint);
 
                     return;
