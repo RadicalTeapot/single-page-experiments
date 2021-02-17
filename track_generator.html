@@ -382,6 +382,17 @@
                 if (this.pane.feature >= 1) this.splitSegments();
                 if (this.pane.feature >= 2) this.smooth();
                 if (this.pane.feature >= 3) this.cleanup();
+            },
+            getCenter: function() {
+                const bbox = this.segments.reduce((acc, seg) => {
+                    const {firstPoint, secondPoint} = seg;
+                    acc.min.x = Math.min(firstPoint.x, secondPoint.x, acc.min.x);
+                    acc.min.y = Math.min(firstPoint.y, secondPoint.y, acc.min.y);
+                    acc.max.x = Math.max(firstPoint.x, secondPoint.x, acc.max.x);
+                    acc.max.y = Math.max(firstPoint.y, secondPoint.y, acc.max.y);
+                    return acc;
+                }, {min: new Point(1e6, 1e6), max: new Point(-1e6, -1e6)});
+                return bbox.min.add(bbox.max).mult(0.5);
             }
         }).create();
 
@@ -457,19 +468,10 @@
                 ctx.fillStyle = "black";
                 ctx.fillRect(0, 0, w, h);
 
-                // Shift road to center
-                const bbox = segments.reduce((acc, seg) => {
-                    const {firstPoint, secondPoint} = seg;
-                    acc.min.x = Math.min(firstPoint.x, secondPoint.x, acc.min.x);
-                    acc.min.y = Math.min(firstPoint.y, secondPoint.y, acc.min.y);
-                    acc.max.x = Math.max(firstPoint.x, secondPoint.x, acc.max.x);
-                    acc.max.y = Math.max(firstPoint.y, secondPoint.y, acc.max.y);
-                    return acc;
-                }, {min: new Point(w, h), max: new Point(0, 0)});
-                const center = this.camera.position.clone().subtract(bbox.min.add(bbox.max).mult(0.5)).mult(this.camera.zoomAmount);
+                // Shift camera to road center
+                const center = this.camera.position.clone().subtract(RoadGenerator.getCenter()).mult(this.camera.zoomAmount);
                 ctx.setTransform(
-                    this.camera.zoomAmount, 0, 0, this.camera.zoomAmount,
-                    w * 0.5 + center.x, h * 0.5 + center.y
+                    this.camera.zoomAmount, 0, 0, this.camera.zoomAmount, w * 0.5 + center.x, h * 0.5 + center.y
                 );
 
                 // Render road
