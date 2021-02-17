@@ -252,12 +252,13 @@
         })();
 
         const RoadGenerator = (() => {
-            const CURVE_THRESHOLD = 0.005;
+            const INITIAL_SPLIT_COUNT = 3;
+            const SMOOTH_ITERATIONS = 20;
 
             const roadGeneratorObject = {
                 // TODO check what happens when start segment intersects in splitSegments (i.e. with seed 270979897)
                 // TODO Figure out why 270979899 is broken
-                // TODO Remove very small segments in cleanup
+                // TODO Remove very small segments in convertToCurves
                 segments: [],
                 init: function () {
                     // Initial points
@@ -265,7 +266,7 @@
                     this.segments = points.map((point, i) => new Segment(point, points[(i + 1) % points.length]));
 
                     // Split segments and move new point along segment normal
-                    for (let i = 0; i < 3; i++) {
+                    for (let _ = 0; _ < INITIAL_SPLIT_COUNT; _++) {
                         this.segments = this.segments.reduce((acc, seg, i) => {
                             let newPoint = seg.movePointNormal(seg.getPointAtPosition(Util.rand(0.25, 0.75)), Util.rand(-0.4, 0.4));
                             acc.push(new Segment(seg.firstPoint, newPoint));
@@ -332,8 +333,7 @@
                     }
                 },
                 smooth: function () {
-                    const smoothIterations = 20;
-                    for (let _ = 0; _ < smoothIterations; _++) {
+                    for (let _ = 0; _ < SMOOTH_ITERATIONS; _++) {
                         this.segments.forEach((seg, i) => {
                             const previous = i ? this.segments[i - 1].firstPoint : this.segments[this.segments.length - 1].firstPoint;
                             const next = seg.secondPoint;
@@ -342,7 +342,7 @@
                         });
                     }
                 },
-                cleanup: function () {
+                convertToCurves: function () {
                     this.segments.forEach((seg, i) => {
                         const previous = this.segments[i ? i - 1 : this.segments.length - 1].vector.normalize();
                         const next = seg.vector.normalize();
@@ -373,7 +373,7 @@
                     if (this.pane.feature >= 0) this.init();
                     if (this.pane.feature >= 1) this.splitSegments();
                     if (this.pane.feature >= 2) this.smooth();
-                    if (this.pane.feature >= 3) this.cleanup();
+                    if (this.pane.feature >= 3) this.convertToCurves();
                 },
                 getCenter: function () {
                     const bbox = this.segments.reduce((acc, seg) => {
