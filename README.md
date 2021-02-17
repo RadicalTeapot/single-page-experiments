@@ -119,3 +119,15 @@ Test canvas image scaling.
 #### test_map_generation
 
 Test terrain generation using PRNG.
+
+#### road_generator_2
+
+Another road generator test.
+
+#### music_generator
+
+(Non-working) test to generate rhythm patterns.
+
+#### test_double_linked_list
+
+Test implementation of double linked list.
