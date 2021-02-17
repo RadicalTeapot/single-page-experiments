@@ -91,7 +91,7 @@
 
         const Segment = (() => {
             const segmentObject = {
-                firstPoint: null, secondPoint: null,
+                firstPoint: null, secondPoint: null, controlPoint: null, curveAmount: 0,
 
                 get vector() { return this.secondPoint.clone().subtract(this.firstPoint) },
 
@@ -252,7 +252,7 @@
             const CURVE_THRESHOLD = 0.005;
 
             const roadGeneratorObject = {
-                // TODO Fix cleanup method
+                // TODO Remove very small segments in cleanup
                 segments: [],
                 init: function () {
                     // Initial points
@@ -339,36 +339,22 @@
                     }
                 },
                 cleanup: function () {
-                    let previous = 0, next = 0, segNext = 0;
-
-                    // TODO : Remove points that are really close to other points
-                    this.points.forEach((point, i) => {
-                        previous = i ? i - 1 : this.points.length - 1;
-                        next = (i + 1) % this.points.length;
+                    this.segments.forEach((seg, i) => {
+                        const previous = this.segments[i ? i - 1 : this.segments.length - 1].vector.normalize();
+                        const next = seg.vector.normalize();
                         // 0 -> parallel, 1 -> perpendicular
-                        this.points[i][2] = 1 - Util.adot(
-                            Util.norm([this.points[previous][0] - point[0], this.points[previous][1] - point[1]]),
-                            Util.norm([this.points[next][0] - point[0], this.points[next][1] - point[1]])
-                        );
+                        seg.curveAmount = 1 - previous.absDot(next);
                     });
 
                     // Build curves
-                    this.roadSegments = [];
-                    this.points.forEach((point, i) => {
-                        next = (i + 1) % this.points.length;
-                        segNext = (i + 2) % this.points.length;
-                        this.points[next][2] > CURVE_THRESHOLD ?
-                            this.roadSegments.push([
-                                this.points[next][2] * 5,
-                                Util.center(point, this.points[next]),
-                                this.points[next],
-                                Util.center(this.points[next], this.points[segNext])
-                            ]) :
-                            this.roadSegments.push([
-                                this.points[next][2] * 5,
-                                Util.center(point, this.points[next]),
-                                Util.center(this.points[next], this.points[segNext])
-                            ]);
+                    const roadSegments = [];
+                    this.segments.forEach((seg, i) => {
+                        const segNext = (i + 1) % this.segments.length;
+                        const center = seg.getCenter();
+                        if(seg.curveAmount > CURVE_THRESHOLD)
+                            seg.controlPoint = seg.secondPoint.clone();
+                        seg.firstPoint.x = center.x;
+                        seg.firstPoint.y = center.y;
                     });
                 },
                 generate: function () {
@@ -410,11 +396,12 @@
                     else
                         this.segments.forEach(seg => {
                             ctx.beginPath()
-                            ctx.strokeStyle = `hsl(0,100%,${100 - Math.min(seg[0], 1) * 50}%)`;
-                            ctx.moveTo(seg[1][0], seg[1][1]);
-                            seg.length == 3 ?
-                                ctx.lineTo(seg[2][0], seg[2][1]) :
-                                ctx.quadraticCurveTo(seg[2][0], seg[2][1], seg[3][0], seg[3][1]);
+                            ctx.strokeStyle = `hsl(0,100%,${100 - Math.min(seg.curveAmount * 5, 1) * 50}%)`;
+                            ctx.moveTo(seg.firstPoint.x, seg.firstPoint.y);
+                            if (seg.controlPoint === null)
+                                ctx.lineTo(seg.secondPoint.x, seg.secondPoint.y);
+                            else
+                                ctx.quadraticCurveTo(seg.controlPoint.x, seg.controlPoint.y, seg.secondPoint.x, seg.secondPoint.y);
                             ctx.stroke();
                         });
                 }
