@@ -23,15 +23,16 @@
             const params = {
                 seed: 270979880,
                 feature: 2,
+                drawDebug: true,
             };
 
             return function(onChangeCallback) {
                 let self = Object.create(params);
                 const pane = new Tweakpane();
-                pane.addInput(self, 'seed', {step: 1});
-                pane.addInput(self, 'feature', {options:{base: 0, split: 1, smooth: 2, cleanup: 3}});
+                pane.addInput(self, 'seed', {step: 1}).on('change', _ => onChangeCallback());
+                pane.addInput(self, 'feature', {options:{base: 0, split: 1, smooth: 2, cleanup: 3}}).on('change', _ => onChangeCallback());
+                pane.addInput(self, 'drawDebug');
 
-                pane.on('change', _ => onChangeCallback());
                 return self;
             }
         })();
@@ -254,6 +255,8 @@
             const CURVE_THRESHOLD = 0.005;
 
             const roadGeneratorObject = {
+                // TODO check what happens when start segment intersects in splitSegments (i.e. with seed 270979897)
+                // TODO Figure out why 270979899 is broken
                 // TODO Remove very small segments in cleanup
                 segments: [],
                 init: function () {
@@ -274,7 +277,6 @@
                 splitSegments: function () {
                     // Build linked list
                     const list = new DoubleLinkedList(this.segments);
-                    // TODO check what happens when start segment intersects (i.e. with seed 270979897)
 
                     // Intersect and flip loops
                     let current = list.start;
@@ -350,14 +352,21 @@
 
                     // Build curves
                     const roadSegments = [];
+                    // Store center of first segment
+                    let firstSegmentCenter = this.segments[0].getCenter();
                     this.segments.forEach((seg, i) => {
                         const segNext = (i + 1) % this.segments.length;
                         const center = seg.getCenter();
-                        if(seg.curveAmount > CURVE_THRESHOLD)
-                            seg.controlPoint = seg.secondPoint.clone();
-                        seg.firstPoint.x = center.x;
-                        seg.firstPoint.y = center.y;
+                        seg.controlPoint = seg.secondPoint.clone();
+                        // Skip setting point of first segment so last segment center will be correct
+                        if (i) {
+                            seg.firstPoint.x = center.x;
+                            seg.firstPoint.y = center.y;
+                        }
                     });
+                    // Set first segment point to original center
+                    this.segments[0].firstPoint.x = firstSegmentCenter.x;
+                    this.segments[0].firstPoint.y = firstSegmentCenter.y;
                 },
                 generate: function () {
                     Util.seed = this.pane.seed;
@@ -378,32 +387,49 @@
                     return bbox.min.add(bbox.max).mult(0.5);
                 },
                 render: function(ctx, zoom) {
+                    const { feature, drawDebug } = this.pane;
+
                     ctx.lineWidth = 2 / zoom;
                     ctx.font = '6px monospace';
 
-                    if (this.pane.feature < 3)
+                    if (feature < 3)
                         this.segments.forEach((seg, i) => {
                             const { firstPoint, secondPoint } = seg;
                             ctx.strokeStyle = ctx.fillStyle = `hsl(${i * 20},100%,50%)`;
-                            ctx.fillRect(
-                                firstPoint.x - 3 / zoom, firstPoint.y - 3 / zoom,
-                                6 / zoom, 6 / zoom
-                            );
+                            if (drawDebug) {
+                                ctx.fillRect(
+                                    firstPoint.x - 3 / zoom, firstPoint.y - 3 / zoom,
+                                    6 / zoom, 6 / zoom
+                                );
+                                ctx.fillText(i, firstPoint.x - 2, firstPoint.y - 2);
+                            }
                             ctx.beginPath();
                             ctx.moveTo(firstPoint.x, firstPoint.y);
                             ctx.lineTo(secondPoint.x, secondPoint.y);
                             ctx.stroke();
-                            ctx.fillText(i, firstPoint.x - 2, firstPoint.y - 2);
                         });
                     else
-                        this.segments.forEach(seg => {
+                        this.segments.forEach((seg, i) => {
+                            const { firstPoint, secondPoint, controlPoint, curveAmount } = seg;
+                            ctx.strokeStyle = ctx.fillStyle = `hsl(0,100%,${100 - Math.min(curveAmount * 5, 1) * 50}%)`;
+                            if (drawDebug) {
+                                ctx.fillRect(
+                                    firstPoint.x - 3 / zoom, firstPoint.y - 3 / zoom,
+                                    6 / zoom, 6 / zoom
+                                );
+                                if (controlPoint !== null)
+                                    ctx.strokeRect(
+                                        controlPoint.x - 3 / zoom, controlPoint.y - 3 / zoom,
+                                        6 / zoom, 6 / zoom
+                                    );
+                                ctx.fillText(i, firstPoint.x - 2, firstPoint.y - 2);
+                            }
                             ctx.beginPath()
-                            ctx.strokeStyle = `hsl(0,100%,${100 - Math.min(seg.curveAmount * 5, 1) * 50}%)`;
-                            ctx.moveTo(seg.firstPoint.x, seg.firstPoint.y);
-                            if (seg.controlPoint === null)
-                                ctx.lineTo(seg.secondPoint.x, seg.secondPoint.y);
+                            ctx.moveTo(firstPoint.x, firstPoint.y);
+                            if (controlPoint === null)
+                                ctx.lineTo(secondPoint.x, secondPoint.y);
                             else
-                                ctx.quadraticCurveTo(seg.controlPoint.x, seg.controlPoint.y, seg.secondPoint.x, seg.secondPoint.y);
+                                ctx.quadraticCurveTo(controlPoint.x, controlPoint.y, secondPoint.x, secondPoint.y);
                             ctx.stroke();
                         });
                 }
