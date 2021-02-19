@@ -131,3 +131,7 @@ Another road generator test.
 #### test_double_linked_list
 
 Test implementation of double linked list.
+
+#### test_web_audio
+
+Test web audio API.

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <input type="button" id="playButton" value="Play">
+    <input type="button" id="stopButton" value="Stop">
+    <script>
+        "use strict";
+        window.AudioContext = window.AudioContext || window.webkitAudioContext;
+        let context = null;
+
+        const player = ({
+            create: function () {
+                let self = Object.create(this);
+                this.globalGain = null;
+                return self;
+            },
+            play: function (context, attack, sustain, release, delayTime) {
+                const oscillator = context.createOscillator();
+                oscillator.frequency.value = 261.63;
+                oscillator.type = "sine";
+
+                const envelope = context.createGain();
+                envelope.gain.cancelScheduledValues(context.currentTime);
+                envelope.gain.setValueAtTime(0, context.currentTime);
+                // Attack
+                envelope.gain.linearRampToValueAtTime(1, context.currentTime + attack);
+                // Sustain
+                envelope.gain.linearRampToValueAtTime(1, context.currentTime + attack + sustain);
+                // Release
+                envelope.gain.linearRampToValueAtTime(0, context.currentTime + attack + sustain + release);
+
+                const lfo = context.createOscillator();
+                lfo.type = "sine";
+                lfo.frequency.value = 5.0;
+                const lfoStrength = context.createGain();
+                lfoStrength.gain.setValueAtTime(0.066, context.currentTime);
+
+                const volume = context.createGain();
+                volume.gain.cancelScheduledValues(context.currentTime);
+                volume.gain.setValueAtTime(1, context.currentTime);
+
+                const delay = context.createDelay(delayTime);
+                delay.delayTime.setValueAtTime(delayTime, context.currentTime);
+                const delayDepth = context.createGain();
+                delayDepth.gain.setValueAtTime(0.75, context.currentTime);
+
+                this.globalGain = this.globalGain || context.createGain();
+                this.globalGain.gain.setValueAtTime(0.5, context.currentTime);
+
+                // Loop sound back onto itself
+                delay.connect(delayDepth).connect(delay);
+
+                // Connect all to master volume control
+                lfo.connect(lfoStrength).connect(volume.gain);
+                oscillator.connect(envelope).connect(volume).connect(this.globalGain);
+                volume.connect(delay).connect(this.globalGain);
+
+                // Connect master volume to sound output
+                this.globalGain.connect(context.destination);
+
+                // Run oscillators and plan when to stop them
+                lfo.start(context.currentTime);
+                oscillator.start(context.currentTime);
+                oscillator.stop(context.currentTime + attack + sustain + release);
+            },
+            stop: function() {
+                if (this.globalGain == null)
+                    return;
+
+                // Disconnect and discard the main volume node
+                this.globalGain.disconnect();
+                this.globalGain = null;
+            }
+        }).create();
+
+        playButton.onclick = e => {
+            context = context || new AudioContext();
+            context.resume().then(_ => {
+                player.play(context, 0.025, 0.5, 1.0, 1.25);
+            });
+        };
+        stopButton.onclick = e => {
+            player.stop();
+        }
+    </script>
+</body>
+</html>
