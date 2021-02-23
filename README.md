@@ -135,3 +135,7 @@ Test implementation of double linked list.
 #### test_web_audio
 
 Test web audio API.
+
+#### fugue_generator
+
+Quick implementation of [Fugue machine](https://alexandernaut.com/fuguemachine/) ideas.

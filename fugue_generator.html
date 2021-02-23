@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test fugue machine</title>
+</head>
+<body>
+    <input id="playButton" value="Play" type="button">
+    <input id="stopButton" value="Stop" type="button">
+    <script>
+        "use strict";
+        window.AudioContext = window.AudioContext || window.webkitAudioContext;
+
+        const sequencer = ({
+            playing: false,
+            notes: [300, 700, 800, 1000, 1200], //C, E, F, G, C
+            duration: [1, 0.5, 0.5, 1, 1],
+            heads: [
+                {speed: 1, offset: 0, direction: 'forward', gain: 1},
+                {speed: 1/8, offset: -1200, direction: 'forward', gain: 1},
+                {speed: 1/8, offset: 500, direction: 'backward', gain: 1},
+                {speed: 2, offset: 1700, direction: 'ping-pong', gain: 0.5},
+            ],
+            create: function() {
+                var self = Object.create(this);
+                self.context = null;
+                self.playNotes = self.playNotes.bind(self);
+                return self;
+            },
+            init: function() {
+                this.context = this.context || new AudioContext();
+                this.playing = true;
+                this.playNotes(0, 1);
+                this.playNotes(1, 1);
+                this.playNotes(2, -1);
+                this.playNotes(3, 1);
+            },
+            playNotes(headIndex, direction) {
+                const oscillator = this.context.createOscillator();
+                oscillator.type = "saw";
+                oscillator.frequency.value = 220;
+
+                let notes = this.notes.slice();
+                let duration = this.duration.slice();
+                if (direction == -1) {
+                    notes.reverse();
+                    duration.reverse();
+                }
+                let acc = 0;
+                duration = duration.map(v => {acc += v / this.heads[headIndex].speed; return acc;});
+                oscillator.detune.setValueAtTime(notes[0] + this.heads[headIndex].offset, this.context.currentTime);
+                notes.slice(1).forEach((note, i) => oscillator.detune.setValueAtTime(note + this.heads[headIndex].offset, this.context.currentTime + duration[i]));
+
+                const envelope = this.context.createGain();
+                duration.forEach((v, i) => {
+                    const offset = i ? duration[i-1]: 0;
+                    const diff = v - offset;
+                    envelope.gain.setValueAtTime(0, this.context.currentTime + offset);
+                    envelope.gain.linearRampToValueAtTime(1, this.context.currentTime + diff * 0.05 + offset);
+                    envelope.gain.linearRampToValueAtTime(0.75, this.context.currentTime + diff * 0.2 + offset);
+                    envelope.gain.setValueAtTime(0.75, this.context.currentTime + diff * 0.5 + offset);
+                    envelope.gain.linearRampToValueAtTime(0, this.context.currentTime + diff + offset);
+                });
+
+                const gain = this.context.createGain();
+                gain.gain.value = 0.1 * this.heads[headIndex].gain;
+
+                oscillator.connect(envelope).connect(gain).connect(this.context.destination);
+                oscillator.start(this.context.currentTime);
+                oscillator.stop(this.context.currentTime + duration[duration.length - 1]);
+                if (this.playing)
+                    setTimeout(() => this.playNotes(headIndex, this.heads[headIndex].direction === 'ping-pong' ? direction * -1 : direction), duration[duration.length - 1] * 1e3);
+            }
+        }).create();
+
+        playButton.onclick = e => {
+            sequencer.init();
+        }
+        stopButton.onclick = e => {
+            sequencer.playing = false;
+        }
+
+    </script>
+</body>
+</html>
