@@ -116,6 +116,10 @@ Test web audio API.
 
 Quick implementation of [Fugue machine](https://alexandernaut.com/fuguemachine/) ideas.
 
+#### test_timing
+
+Implementation of this [article](https://www.html5rocks.com/en/tutorials/audio/scheduling/)
+
 ### Other
 
 Pages with content which doesn't fit in other categories.

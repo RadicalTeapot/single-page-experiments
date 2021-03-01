@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test timing</title>
+</head>
+<body>
+    <input type="button" value="Play" id="startButton">
+    <input type="button" value="Stop" id="stopButton">
+    <br>
+    <input type="number" min=40 max=240 value=120 step=1 id="tempoInput">
+    <label for="tempoInput">BPM</label>
+    <br>
+    <canvas width=100 height=100 id="canvas"></canvas>
+    <script>
+        "use strict";
+        const metronome = (() => {
+            const NOTE_LENGTH = 0.05;
+            const LOOK_AHEAD_TIME = 0.025; // in s
+            const metronomeObject = {
+                bpm: parseInt(tempoInput.value),
+                audioContext: null,
+                canvasContext: null,
+                nextNoteTime: 0,
+                currentNoteCount: 0,
+                notesInQueue: [],
+                lastDrawTime: 0,
+                lastDrawColor: "",
+
+                nextNote: function() {
+                    this.nextNoteTime += 60.0 / this.bpm;
+                    this.currentNoteCount = (++this.currentNoteCount) % 4;
+                },
+                playNote: function() {
+                    const osc = this.audioContext.createOscillator();
+                    osc.frequency.value = !(this.currentNoteCount % 4) ? 220.0 : 440.0;
+                    osc.connect(this.audioContext.destination);
+                    osc.start(this.nextNoteTime);
+                    osc.stop(this.nextNoteTime + NOTE_LENGTH);
+                    this.notesInQueue.push({count: this.currentNoteCount, time:this.nextNoteTime});
+                },
+                start: function() {
+                    if (this.playing)
+                        return;
+
+                    this.audioContext = this.audioContext || new AudioContext();
+                    this.canvasContext = this.canvasContext || canvas.getContext("2d");
+                    this.nextNoteTime = this.audioContext.currentTime;
+                    this.currentNoteCount = 0;
+                    this.lastDrawTime = 0;
+                    this.notesInQueue = [];
+                    this.playing = true;
+                    this.scheduleNotes();
+                    requestAnimationFrame(this.draw);
+                },
+                stop: function() {
+                    this.playing = false;
+                    cancelAnimationFrame(this.draw);
+                },
+                scheduleNotes: function() {
+                    if (!this.playing)
+                        return;
+
+                    const time = this.audioContext.currentTime;
+                    while(this.nextNoteTime < time + LOOK_AHEAD_TIME) {
+                        this.playNote();
+                        this.nextNote();
+                    }
+                    setTimeout(this.scheduleNotes, LOOK_AHEAD_TIME * 1000);
+                },
+                draw: function(t) {
+                    if (!(this.canvasContext && this.audioContext))
+                        return;
+
+                    const time = this.audioContext.currentTime;
+                    while (this.notesInQueue.length && this.notesInQueue[0].time <= time) {
+                        let currentNote = this.notesInQueue.splice(0, 1);
+                        this.lastDrawTime = t;
+                        this.lastDrawColor = !(currentNote[0].count % 4) ? "red" : "green";
+                    }
+                    this.canvasContext.fillStyle = "black";
+                    if (t - this.lastDrawTime <= 4 * NOTE_LENGTH * 1000)
+                        this.canvasContext.fillStyle = this.lastDrawColor;
+                    this.canvasContext.fillRect(0, 0, canvas.width, canvas.height);
+                    requestAnimationFrame(this.draw);
+                },
+            };
+
+            let metronome = Object.create(metronomeObject);
+            metronome.scheduleNotes = metronome.scheduleNotes.bind(metronome);
+            metronome.draw = metronome.draw.bind(metronome);
+            return metronome;
+        })();
+
+        startButton.onclick = e => {
+            metronome.start();
+        }
+
+        stopButton.onclick = e => {
+            metronome.stop();
+        }
+
+        tempoInput.onchange = e => {
+            metronome.bpm = parseInt(e.target.value);
+        }
+    </script>
+</body>
+</html>
