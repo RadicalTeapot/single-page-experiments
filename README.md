@@ -100,6 +100,10 @@ Find intersection points between a ray and a non-rotated box in 2D.
 
 Playground for triangle related geometry implementations.
 
+#### test_quad_bezier_to_poly
+
+Convert a quadratic bezier curve to a triangle strip, bezier splitting algorithm from [here](https://raphlinus.github.io/graphics/curves/2019/12/23/flatten-quadbez.html).
+
 ### Music
 
 Pages related to music theory / generation.

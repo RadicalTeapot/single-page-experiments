@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test quad bezier to poly</title>
+    <style>body {margin: 0; overflow: hidden;}</style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        "use strict";
+
+        class Quad {
+            constructor(x0, y0, x1, y1, x2, y2) {
+                this.x0 = x0;
+                this.x1 = x1;
+                this.x2 = x2;
+                this.y0 = y0;
+                this.y1 = y1;
+                this.y2 = y2;
+            }
+
+            eval(t) {
+                const mt = 1 - t;
+                const x = this.x0 * mt * mt + 2 * this.x1 * t * mt + this.x2 * t * t;
+                const y = this.y0 * mt * mt + 2 * this.y1 * t * mt + this.y2 * t * t;
+                return {x, y};
+            }
+
+            // Subdivide using method from Sederberg's CAGD notes (https://scholarsarchive.byu.edu/cgi/viewcontent.cgi?article=1000&context=facpub#section.10.6)
+            // Implementation lifted from https://raphlinus.github.io/graphics/curves/2019/12/23/flatten-quadbez.html
+            subdiv_sederberg(tolerance, round_to_pow2) {
+                const ddx = 2*(this.x2 - 2*this.x1 + this.x0);
+                const ddy = 2*(this.y2 - 2*this.y1 + this.y0);
+                const dd = Math.hypot(ddx, ddy);
+                let n = Math.ceil(Math.sqrt(dd / (8*tolerance)));
+                if (round_to_pow2) {
+                    n = 1 << 32 - Math.clz32(n - 1);
+                }
+                let result = [];
+                for (let i = 0; i < n; i++) {
+                    const t = i / n;
+                    result.push(t);
+                }
+                result.push(1);
+                return result;
+            }
+
+            draw(ctx) {
+                const subdivPoints = this.subdiv_sederberg(10, true);
+
+                const thickness = 100;
+                const polyPoints = subdivPoints.reduce((acc, t, i) => {
+                    const p = this.eval(subdivPoints[Math.max(i-1, 0)]);
+                    const c = this.eval(t);
+                    const n = this.eval(subdivPoints[Math.min(i+1, subdivPoints.length-1)]);
+
+                    let norm1 = {x:c.y-p.y, y:p.x-c.x};
+                    let norm2 = {x:n.y-c.y, y:c.x-n.x};
+                    const l1 = Math.hypot(norm1.x, norm1.y);
+                    const l2 = Math.hypot(norm2.x, norm2.y);
+                    norm1.x /= (l1 || 1); norm1.y /= (l1 || 1);
+                    norm2.x /= (l2 || 1); norm2.y /= (l2 || 1);
+                    if (l1 == 0) norm1 = norm2;
+                    if (l2 == 0) norm2 = norm1;
+                    const norm = {x:0.5*thickness*(norm1.x+norm2.x), y:0.5*thickness*(norm1.y+norm2.y)};
+
+                    acc.push({x:c.x-norm.x, y:c.y-norm.y}, {x:c.x+norm.x, y:c.y+norm.y});
+                    return acc;
+                }, []);
+
+                ctx.fillStyle = 'green';
+                polyPoints.slice(0, -2).forEach((p, i) => {
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y);
+                    ctx.lineTo(polyPoints[i+1].x, polyPoints[i+1].y);
+                    ctx.lineTo(polyPoints[i+2].x, polyPoints[i+2].y);
+                    ctx.closePath();
+                    ctx.fill();
+                })
+
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(this.x0, this.y0);
+                ctx.quadraticCurveTo(this.x1, this.y1, this.x2, this.y2);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                subdivPoints.forEach((t, i) => {
+                    const position = this.eval(t);
+                    if (i)
+                        ctx.lineTo(position.x, position.y);
+                    else
+                        ctx.moveTo(position.x, position.y);
+                    ctx.strokeRect(position.x - 3, position.y - 3, 6, 6);
+                })
+                ctx.stroke();
+            }
+        }
+
+        ({
+            init: function() {
+                this.ctx = canvas.getContext("2d");
+                this.connect();
+                this.render = this.render.bind(this);
+                requestAnimationFrame(t => {
+                    this.resize();
+                    this.render(t);
+                });
+            },
+            connect: function() {
+                window.onresize = e => this.resize();
+            },
+            resize: function() {
+                this.w = innerWidth;
+                this.h = innerHeight;
+                canvas.width = this.w;
+                canvas.height = this.h;
+                this.quad = new Quad(this.w/6, 5*this.h/6, this.w/6, this.h/6, 5*this.w/6, this.h/6);
+            },
+            render: function(t) {
+                const {w, h, ctx} = this;
+
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, w, h);
+
+                this.quad.draw(ctx);
+
+                requestAnimationFrame(this.render);
+            }
+        }).init();
+    </script>
+</body>
+</html>
